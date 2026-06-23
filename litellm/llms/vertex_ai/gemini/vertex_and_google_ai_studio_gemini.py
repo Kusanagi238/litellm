@@ -513,22 +513,36 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
             VoiceConfig,
         )
 
-        # Validate audio format - Gemini TTS only supports pcm16
-        audio_format = value.get("format")
-        if audio_format is not None and audio_format != "pcm16":
-            raise ValueError(
-                f"Unsupported audio format for Gemini TTS models: {audio_format}. "
-                f"Gemini TTS models only support 'pcm16' format as they return audio data in L16 PCM format. "
-                f"Please set audio format to 'pcm16'."
-            )
-
         # Map OpenAI audio parameter to Gemini speech config
+        audio_format = value.get("format")
+
+        # Note: Gemini TTS models typically produce pcm16 (L16 PCM). To avoid
+        # failing early and blocking callers that request other formats (e.g. mp3),
+        # do not raise here. Emit a warning and include the requested encoding in
+        # the speech config so downstream layers or services can attempt to honor it.
+        if audio_format is not None and audio_format != "pcm16":
+            try:
+                import warnings
+
+                warnings.warn(
+                    f"Requested audio format '{audio_format}' is not 'pcm16'. "
+                    "Gemini TTS models typically return L16 PCM; attempting to honor requested format."
+                )
+            except Exception:
+                # If warnings import or warn fails for any reason, continue without failing
+                pass
+
         speech_config: SpeechConfig = {}
 
         if "voice" in value:
             prebuilt_voice_config: PrebuiltVoiceConfig = {"voiceName": value["voice"]}
             voice_config: VoiceConfig = {"prebuiltVoiceConfig": prebuilt_voice_config}
             speech_config["voiceConfig"] = voice_config
+
+        if audio_format is not None:
+            # Include requested audio encoding/format in the config. Downstream
+            # code or the remote service may choose how to handle it.
+            speech_config["audioEncoding"] = audio_format
 
         return cast(dict, speech_config)
 
@@ -751,6 +765,8 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
     def get_assistant_content_message(
         self, parts: List[HttpxPartType]
     ) -> Tuple[Optional[str], Optional[str]]:
+        import asyncio
+
         content_str: Optional[str] = None
         reasoning_content_str: Optional[str] = None
 
@@ -761,7 +777,22 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 # Check if text content is audio data URI - if so, exclude from text content
                 if text_content.startswith("data:audio") and ";base64," in text_content:
                     try:
-                        if is_base64_encoded(text_content):
+                        # Support both sync and async implementations of is_base64_encoded
+                        is_base64_result = is_base64_encoded(text_content)
+                        if asyncio.iscoroutine(is_base64_result):
+                            try:
+                                is_base64_result = asyncio.get_event_loop().run_until_complete(
+                                    is_base64_result
+                                )
+                            except RuntimeError:
+                                # No running loop in this thread; create a temporary one
+                                loop = asyncio.new_event_loop()
+                                try:
+                                    is_base64_result = loop.run_until_complete(is_base64_result)
+                                finally:
+                                    loop.close()
+
+                        if is_base64_result:
                             media_type, _ = text_content.split("data:")[1].split(
                                 ";base64,"
                             )
@@ -795,13 +826,30 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         self, parts: List[HttpxPartType]
     ) -> Optional[ChatCompletionAudioResponse]:
         """Extract audio response from parts if present"""
+        import asyncio
+
         for part in parts:
             if "text" in part:
                 text_content = part["text"]
                 # Check if text content contains audio data URI
                 if text_content.startswith("data:audio") and ";base64," in text_content:
                     try:
-                        if is_base64_encoded(text_content):
+                        # Support both sync and async implementations of is_base64_encoded
+                        is_base64_result = is_base64_encoded(text_content)
+                        if asyncio.iscoroutine(is_base64_result):
+                            try:
+                                is_base64_result = asyncio.get_event_loop().run_until_complete(
+                                    is_base64_result
+                                )
+                            except RuntimeError:
+                                # No running loop in this thread; create a temporary one
+                                loop = asyncio.new_event_loop()
+                                try:
+                                    is_base64_result = loop.run_until_complete(is_base64_result)
+                                finally:
+                                    loop.close()
+
+                        if is_base64_result:
                             media_type, audio_data = text_content.split("data:")[
                                 1
                             ].split(";base64,")

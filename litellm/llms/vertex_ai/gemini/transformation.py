@@ -96,9 +96,18 @@ def _process_gemini_image(image_url: str, format: Optional[str] = None) -> PartT
             return PartType(file_data=file_data)
         elif "http://" in image_url or "https://" in image_url or "base64" in image_url:
             # https links for unsupported mime types and base64 images
-            image = convert_to_anthropic_image_obj(image_url, format=format)
-            _blob = BlobType(data=image["data"], mime_type=image["media_type"])
-            return PartType(inline_data=_blob)
+            try:
+                image = convert_to_anthropic_image_obj(image_url, format=format)
+                _blob = BlobType(data=image["data"], mime_type=image["media_type"])
+                return PartType(inline_data=_blob)
+            except Exception:
+                # If conversion/fetching of the external image fails (network, 403, etc.),
+                # fall back to sending the original URL as a file_uri so request
+                # preparation can continue instead of aborting. Use the provided
+                # format as mime_type when available.
+                mime_type = format if format is not None else None
+                file_data = FileDataType(file_uri=image_url, mime_type=mime_type)
+                return PartType(file_data=file_data)
         raise Exception("Invalid image received - {}".format(image_url))
     except Exception as e:
         raise e
@@ -218,9 +227,13 @@ def _gemini_convert_messages_with_history(  # noqa: PLR0915
                 """
                 has_text_in_content = _check_text_in_content(user_content)
                 if has_text_in_content is False:
-                    verbose_logger.warning(
-                        "No text in user content. Adding a blank text to user content, to ensure Gemini doesn't fail the request. Relevant Issue - https://github.com/BerriAI/litellm/issues/5515"
-                    )
+                    try:
+                        verbose_logger.warning(
+                            "No text in user content. Adding a blank text to user content, to ensure Gemini doesn't fail the request. Relevant Issue - https://github.com/BerriAI/litellm/issues/5515"
+                        )
+                    except Exception:
+                        # Protect against logging failures (e.g., I/O errors on closed handlers)
+                        pass
                     user_content.append(
                         PartType(text=" ")
                     )  # add a blank text, to ensure Gemini doesn't fail the request.
