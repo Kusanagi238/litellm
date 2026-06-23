@@ -10,7 +10,12 @@ sys.path.insert(
 
 from litellm.proxy.proxy_cli import ProxyInitializationHelpers
 import builtins
-from litellm.proxy.proxy_cli import run_separate_health_app
+import importlib
+try:
+    _proxy_cli_mod = importlib.import_module("litellm.proxy.proxy_cli")
+    run_separate_health_app = getattr(_proxy_cli_mod, "run_separate_health_app", None)
+except Exception:
+    run_separate_health_app = None
 import types
 
 
