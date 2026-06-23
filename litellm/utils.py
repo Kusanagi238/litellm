@@ -1946,16 +1946,24 @@ def supports_response_schema(
         )
         return False
 
-    # providers that globally support response schema
-    PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA = [
-        litellm.LlmProviders.PREDIBASE,
-        litellm.LlmProviders.FIREWORKS_AI,
-        litellm.LlmProviders.LM_STUDIO,
-        litellm.LlmProviders.NEBIUS,
-    ]
+    # providers that globally support response schema (use names to avoid accessing missing enum attrs)
+    PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA = {"PREDIBASE", "FIREWORKS_AI", "LM_STUDIO", "NEBIUS"}
 
-    if custom_llm_provider in PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA:
+    def _provider_name(provider: Any) -> Optional[str]:
+        if provider is None:
+            return None
+        # If it's an enum member, prefer its name; otherwise normalize the string
+        name = getattr(provider, "name", None)
+        if name:
+            return name
+        try:
+            return str(provider).upper()
+        except Exception:
+            return None
+
+    if _provider_name(custom_llm_provider) in PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA:
         return True
+
     return _supports_factory(
         model=model,
         custom_llm_provider=custom_llm_provider,
@@ -6844,7 +6852,7 @@ class ProviderConfigManager:
             return litellm.LiteLLMProxyChatConfig()
         elif litellm.LlmProviders.OPENAI == provider:
             return litellm.OpenAIGPTConfig()
-        elif litellm.LlmProviders.DIGITALOCEAN == provider:
+        elif getattr(litellm.LlmProviders, "DIGITALOCEAN", None) == provider:
             return litellm.DigitalOceanConfig()
         elif litellm.LlmProviders.NSCALE == provider:
             return litellm.NscaleConfig()

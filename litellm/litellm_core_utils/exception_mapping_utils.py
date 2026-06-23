@@ -2257,25 +2257,45 @@ def exception_type(  # type: ignore  # noqa: PLR0915
             """
             For unmapped exceptions - raise the exception with traceback - https://github.com/BerriAI/litellm/issues/4201
             """
-            exception_mapping_worked = True
-            if hasattr(original_exception, "request"):
+            # Detect whether this appears to be a network/connection-related error. If so,
+            # wrap as APIConnectionError. Otherwise, preserve the original exception
+            # type (e.g., AttributeError) so we do not mask programming errors.
+            network_error = False
+            try:
+                if hasattr(original_exception, "request"):
+                    network_error = True
+                elif isinstance(original_exception, (httpx.RequestError, httpx.HTTPStatusError)):
+                    network_error = True
+                else:
+                    lower_err = error_str.lower() if isinstance(error_str, str) else ""
+                    if (
+                        "connection" in lower_err
+                        or "connect" in lower_err
+                        or "timed out" in lower_err
+                        or "timeout" in lower_err
+                        or "could not" in lower_err
+                    ):
+                        network_error = True
+            except Exception:
+                network_error = False
+
+            if network_error:
+                exception_mapping_worked = True
                 raise APIConnectionError(
                     message="{} - {}".format(exception_provider, error_str),
                     llm_provider=custom_llm_provider,
                     model=model,
-                    request=original_exception.request,
+                    request=getattr(
+                        original_exception,
+                        "request",
+                        httpx.Request(method="POST", url="https://api.openai.com/v1/"),
+                    ),
                 )
             else:
-                raise APIConnectionError(
-                    message="{}\n{}".format(
-                        str(original_exception), traceback.format_exc()
-                    ),
-                    llm_provider=custom_llm_provider,
-                    model=model,
-                    request=httpx.Request(
-                        method="POST", url="https://api.openai.com/v1/"
-                    ),  # stub the request
-                )
+                # Preserve the original exception (e.g., AttributeError) so callers see the real
+                # programming/runtime error instead of it being misclassified as an API connection error.
+                exception_mapping_worked = True
+                raise original_exception
     except Exception as e:
         # LOGGING
         exception_logging(
