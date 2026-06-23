@@ -10,14 +10,33 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.caching.caching import Cache, DualCache, RedisCache, InMemoryCache
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.types.llms.bedrock import COHERE_EMBEDDING_INPUT_TYPES
-from litellm.types.utils import (
-    ImageObject,
-    BudgetConfig,
-    all_litellm_params,
-    all_litellm_params as _litellm_completion_params,
-    CredentialItem,
-    get_valid_models,
-)  # maintain backwards compatibility for root param
+
+try:
+    from litellm.types.utils import (
+        ImageObject,
+        BudgetConfig,
+        all_litellm_params,
+        all_litellm_params as _litellm_completion_params,
+        CredentialItem,
+        get_valid_models,
+    )  # maintain backwards compatibility for root param
+except ImportError:
+    # Fallback: import available names and provide a compatibility stub for get_valid_models
+    from litellm.types.utils import (
+        ImageObject,
+        BudgetConfig,
+        all_litellm_params,
+        all_litellm_params as _litellm_completion_params,
+        CredentialItem,
+    )
+
+    def get_valid_models(*args, **kwargs):
+        """Compatibility stub for get_valid_models when it's not exported from litellm.types.utils.
+        Raising ImportError makes the absence explicit if called elsewhere.
+        """
+        raise ImportError("get_valid_models is not available in litellm.types.utils")
+
+
 from litellm._logging import (
     set_verbose,
     _turn_on_debug,
@@ -123,12 +142,8 @@ _custom_logger_compatible_callbacks_literal = Literal[
     "s3_v2",
 ]
 logged_real_time_event_types: Optional[Union[List[str], Literal["*"]]] = None
-_known_custom_logger_compatible_callbacks: List = list(
-    get_args(_custom_logger_compatible_callbacks_literal)
-)
-callbacks: List[
-    Union[Callable, _custom_logger_compatible_callbacks_literal, CustomLogger]
-] = []
+_known_custom_logger_compatible_callbacks: List = list(get_args(_custom_logger_compatible_callbacks_literal))
+callbacks: List[Union[Callable, _custom_logger_compatible_callbacks_literal, CustomLogger]] = []
 initialized_langfuse_clients: int = 0
 langfuse_default_tags: Optional[List[str]] = None
 langsmith_batch_size: Optional[int] = None
@@ -136,12 +151,8 @@ prometheus_initialize_budget_metrics: Optional[bool] = False
 require_auth_for_metrics_endpoint: Optional[bool] = False
 argilla_batch_size: Optional[int] = None
 datadog_use_v1: Optional[bool] = False  # if you want to use v1 datadog logged payload.
-gcs_pub_sub_use_v1: Optional[
-    bool
-] = False  # if you want to use v1 gcs pubsub logged payload
-generic_api_use_v1: Optional[
-    bool
-] = False  # if you want to use v1 generic api logged payload
+gcs_pub_sub_use_v1: Optional[bool] = False  # if you want to use v1 gcs pubsub logged payload
+generic_api_use_v1: Optional[bool] = False  # if you want to use v1 generic api logged payload
 argilla_transformation_object: Optional[Dict[str, Any]] = None
 _async_input_callback: List[
     Union[str, Callable, CustomLogger]
@@ -159,18 +170,18 @@ log_raw_request_response: bool = False
 redact_messages_in_exceptions: Optional[bool] = False
 redact_user_api_key_info: Optional[bool] = False
 filter_invalid_headers: Optional[bool] = False
-add_user_information_to_llm_headers: Optional[
-    bool
-] = None  # adds user_id, team_id, token hash (params from StandardLoggingMetadata) to request headers
+add_user_information_to_llm_headers: Optional[bool] = (
+    None  # adds user_id, team_id, token hash (params from StandardLoggingMetadata) to request headers
+)
 store_audit_logs = False  # Enterprise feature, allow users to see audit logs
 ### end of callbacks #############
 
-email: Optional[
-    str
-] = None  # Not used anymore, will be removed in next MAJOR release - https://github.com/BerriAI/litellm/discussions/648
-token: Optional[
-    str
-] = None  # Not used anymore, will be removed in next MAJOR release - https://github.com/BerriAI/litellm/discussions/648
+email: Optional[str] = (
+    None  # Not used anymore, will be removed in next MAJOR release - https://github.com/BerriAI/litellm/discussions/648
+)
+token: Optional[str] = (
+    None  # Not used anymore, will be removed in next MAJOR release - https://github.com/BerriAI/litellm/discussions/648
+)
 telemetry = True
 max_tokens: int = DEFAULT_MAX_TOKENS  # OpenAI Defaults
 drop_params = bool(os.getenv("LITELLM_DROP_PARAMS", False))
@@ -211,9 +222,7 @@ common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
     "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
 }
-use_litellm_proxy: bool = (
-    False  # when True, requests will be sent to the specified litellm proxy endpoint
-)
+use_litellm_proxy: bool = False  # when True, requests will be sent to the specified litellm proxy endpoint
 use_client: bool = False
 ssl_verify: Union[str, bool] = True
 ssl_certificate: Optional[str] = None
@@ -244,9 +253,7 @@ guardrail_name_config_map: Dict[str, GuardrailItem] = {}
 ##################
 ### PREVIEW FEATURES ###
 enable_preview_features: bool = False
-return_response_headers: bool = (
-    False  # get response headers from LLM Api providers - example x-remaining-requests,
-)
+return_response_headers: bool = False  # get response headers from LLM Api providers - example x-remaining-requests,
 enable_json_schema_validation: bool = False
 ##################
 logging: bool = True
@@ -256,27 +263,25 @@ enable_caching_on_provider_specific_optional_params: bool = (
 )
 caching: bool = False  # Not used anymore, will be removed in next MAJOR release - https://github.com/BerriAI/litellm/discussions/648
 caching_with_models: bool = False  # # Not used anymore, will be removed in next MAJOR release - https://github.com/BerriAI/litellm/discussions/648
-cache: Optional[
-    Cache
-] = None  # cache object <- use this - https://docs.litellm.ai/docs/caching
+cache: Optional[Cache] = None  # cache object <- use this - https://docs.litellm.ai/docs/caching
 default_in_memory_ttl: Optional[float] = None
 default_redis_ttl: Optional[float] = None
 default_redis_batch_cache_expiry: Optional[float] = None
 model_alias_map: Dict[str, str] = {}
 model_group_alias_map: Dict[str, str] = {}
 max_budget: float = 0.0  # set the max budget across all providers
-budget_duration: Optional[
-    str
-] = None  # proxy only - resets budget after fixed duration. You can set duration as seconds ("30s"), minutes ("30m"), hours ("30h"), days ("30d").
-default_soft_budget: float = (
-    DEFAULT_SOFT_BUDGET  # by default all litellm proxy keys have a soft budget of 50.0
+budget_duration: Optional[str] = (
+    None  # proxy only - resets budget after fixed duration. You can set duration as seconds ("30s"), minutes ("30m"), hours ("30h"), days ("30d").
 )
+default_soft_budget: float = DEFAULT_SOFT_BUDGET  # by default all litellm proxy keys have a soft budget of 50.0
 forward_traceparent_to_llm_provider: bool = False
 
 
 _current_cost = 0.0  # private variable, used if max budget is set
 error_logs: Dict = {}
-add_function_to_prompt: bool = False  # if function calling not supported by api, append function call details to system prompt
+add_function_to_prompt: bool = (
+    False  # if function calling not supported by api, append function call details to system prompt
+)
 client_session: Optional[httpx.Client] = None
 aclient_session: Optional[httpx.AsyncClient] = None
 model_fallbacks: Optional[List] = None  # Deprecated for 'litellm.fallbacks'
@@ -302,9 +307,7 @@ disable_end_user_cost_tracking: Optional[bool] = None
 disable_end_user_cost_tracking_prometheus_only: Optional[bool] = None
 enable_end_user_cost_tracking_prometheus_only: Optional[bool] = None
 custom_prometheus_metadata_labels: List[str] = []
-disable_add_prefix_to_prompt: bool = (
-    False  # used by anthropic, to disable adding prefix to prompt
-)
+disable_add_prefix_to_prompt: bool = False  # used by anthropic, to disable adding prefix to prompt
 #### REQUEST PRIORITIZATION ####
 priority_reservation: Optional[Dict[str, float]] = None
 
@@ -312,13 +315,9 @@ priority_reservation: Optional[Dict[str, float]] = None
 ######## Networking Settings ########
 use_aiohttp_transport: bool = True  # Older variable, aiohttp is now the default. use disable_aiohttp_transport instead.
 disable_aiohttp_transport: bool = False  # Set this to true to use httpx instead
-disable_aiohttp_trust_env: bool = (
-    False  # when True, aiohttp will not trust environment variables for proxy settings
-)
+disable_aiohttp_trust_env: bool = False  # when True, aiohttp will not trust environment variables for proxy settings
 force_ipv4: bool = False  # when True, litellm will force ipv4 for all LLM requests. Some users have seen httpx ConnectionError when using ipv6.
-module_level_aclient = AsyncHTTPHandler(
-    timeout=request_timeout, client_alias="module level aclient"
-)
+module_level_aclient = AsyncHTTPHandler(timeout=request_timeout, client_alias="module level aclient")
 module_level_client = HTTPHandler(timeout=request_timeout)
 
 #### RETRIES ####
@@ -329,13 +328,11 @@ fallbacks: Optional[List] = None
 context_window_fallbacks: Optional[List] = None
 content_policy_fallbacks: Optional[List] = None
 allowed_fails: int = 3
-num_retries_per_request: Optional[
-    int
-] = None  # for the request overall (incl. fallbacks + model retries)
+num_retries_per_request: Optional[int] = None  # for the request overall (incl. fallbacks + model retries)
 ####### SECRET MANAGERS #####################
-secret_manager_client: Optional[
-    Any
-] = None  # list of instantiated key management clients - e.g. azure kv, infisical, etc.
+secret_manager_client: Optional[Any] = (
+    None  # list of instantiated key management clients - e.g. azure kv, infisical, etc.
+)
 _google_kms_resource_name: Optional[str] = None
 _key_management_system: Optional[KeyManagementSystem] = None
 _key_management_settings: KeyManagementSettings = KeyManagementSettings()
@@ -501,9 +498,7 @@ def is_openai_finetune_model(key: str) -> bool:
 
 def add_known_models():
     for key, value in model_cost.items():
-        if value.get("litellm_provider") == "openai" and not is_openai_finetune_model(
-            key
-        ):
+        if value.get("litellm_provider") == "openai" and not is_openai_finetune_model(key):
             open_ai_chat_completion_models.append(key)
         elif value.get("litellm_provider") == "text-completion-openai":
             open_ai_text_completion_models.append(key)
@@ -561,9 +556,7 @@ def add_known_models():
             nlp_cloud_models.append(key)
         elif value.get("litellm_provider") == "aleph_alpha":
             aleph_alpha_models.append(key)
-        elif value.get(
-            "litellm_provider"
-        ) == "bedrock" and not is_bedrock_pricing_only_model(key):
+        elif value.get("litellm_provider") == "bedrock" and not is_bedrock_pricing_only_model(key):
             bedrock_models.append(key)
         elif value.get("litellm_provider") == "bedrock_converse":
             bedrock_converse_models.append(key)
@@ -1032,7 +1025,6 @@ from .llms.openai.chat.o_series_transformation import (
     OpenAIOSeriesConfig,
 )
 
-from .llms.snowflake.chat.transformation import SnowflakeConfig
 
 openaiOSeriesConfig = OpenAIOSeriesConfig()
 from .llms.openai.chat.gpt_transformation import (
@@ -1061,7 +1053,6 @@ nvidiaNimEmbeddingConfig = NvidiaNimEmbeddingConfig()
 from .llms.featherless_ai.chat.transformation import FeatherlessAIConfig
 from .llms.cerebras.chat import CerebrasConfig
 from .llms.sambanova.chat import SambanovaConfig
-from .llms.ai21.chat.transformation import AI21ChatConfig
 from .llms.fireworks_ai.chat.transformation import FireworksAIConfig
 from .llms.fireworks_ai.completion.transformation import FireworksAITextCompletionConfig
 from .llms.fireworks_ai.audio_transcription.transformation import (
@@ -1153,12 +1144,10 @@ from .types.llms.custom_llm import CustomLLMItem
 from .types.utils import GenericStreamingChunk
 
 custom_provider_map: List[CustomLLMItem] = []
-_custom_providers: List[
-    str
-] = []  # internal helper util, used to track names of custom providers
-disable_hf_tokenizer_download: Optional[
-    bool
-] = None  # disable huggingface tokenizer download. Defaults to openai clk100
+_custom_providers: List[str] = []  # internal helper util, used to track names of custom providers
+disable_hf_tokenizer_download: Optional[bool] = (
+    None  # disable huggingface tokenizer download. Defaults to openai clk100
+)
 global_disable_no_log_param: bool = False
 
 ### PASSTHROUGH ###
