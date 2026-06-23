@@ -84,7 +84,7 @@ class AmazonNovaCanvasConfig:
 
             try:
                 image_generation_config_typed = AmazonNovaCanvasImageGenerationConfig(
-                    **image_generation_config
+                    **image_generation_config  # type: ignore
                 )
             except Exception as e:
                 raise ValueError(
@@ -115,7 +115,7 @@ class AmazonNovaCanvasConfig:
 
             try:
                 image_generation_config_typed = AmazonNovaCanvasImageGenerationConfig(
-                    **image_generation_config
+                    **image_generation_config  # type: ignore
                 )
             except Exception as e:
                 raise ValueError(
@@ -134,7 +134,7 @@ class AmazonNovaCanvasConfig:
             inpainting_params = {"text": text, **inpainting_params}
             try:
                 inpainting_params_typed = AmazonNovaCanvasInpaintingParams(
-                    **inpainting_params
+                    **inpainting_params  # type: ignore
                 )
             except Exception as e:
                 raise ValueError(
@@ -143,7 +143,7 @@ class AmazonNovaCanvasConfig:
 
             try:
                 image_generation_config_typed = AmazonNovaCanvasImageGenerationConfig(
-                    **image_generation_config
+                    **image_generation_config  # type: ignore
                 )
             except Exception as e:
                 raise ValueError(
@@ -184,8 +184,9 @@ class AmazonNovaCanvasConfig:
         """
         Transform the response dict to the OpenAI response
         """
+        from typing import cast
 
-        nova_response = AmazonNovaCanvasTextToImageResponse(**response_dict)
+        nova_response = cast(AmazonNovaCanvasTextToImageResponse, response_dict)
         openai_images: List[Image] = []
         for _img in nova_response.get("images", []):
             openai_images.append(Image(b64_json=_img))
