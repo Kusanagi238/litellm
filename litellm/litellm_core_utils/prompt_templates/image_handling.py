@@ -16,10 +16,13 @@ in_memory_cache = InMemoryCache(max_size_in_memory=MAX_IMGS_IN_MEMORY)
 
 
 def _process_image_response(response: Response, url: str) -> str:
+    # If the response status is not OK, do not raise immediately — return None
+    # so callers can decide whether to retry or fail gracefully.
     if response.status_code != 200:
-        raise Exception(
-            f"Error: Unable to fetch image from URL. Status code: {response.status_code}, url={url}"
+        verbose_logger.warning(
+            f"Unable to fetch image from URL. Status code: {response.status_code}, url={url}"
         )
+        return None
 
     image_bytes = response.content
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -35,9 +38,11 @@ def _process_image_response(response: Response, url: str) -> str:
             "webp": "image/webp",
         }.get(img_type)
         if _img_type is None:
-            raise Exception(
-                f"Error: Unsupported image format. Format={_img_type}. Supported types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']"
+            # Unsupported image format — log and return None to allow callers to handle.
+            verbose_logger.warning(
+                f"Unsupported image format for url={url}. Detected extension={img_type}."
             )
+            return None
         img_type = _img_type
     else:
         img_type = image_type
@@ -73,10 +78,15 @@ def convert_url_to_base64(url: str) -> str:
     for _ in range(3):
         try:
             response = client.get(url, follow_redirects=True)
-            return _process_image_response(response, url)
+            result = _process_image_response(response, url)
+            # If processing returned a valid base64 string, return it. If None, treat as retryable.
+            if result:
+                return result
+            # Otherwise raise to trigger the retry logic in this loop.
+            raise Exception(f"Non-OK response or unsupported image for url={url}, status={response.status_code}")
         except Exception as e:
             verbose_logger.exception(e)
-            # print(e)
+            # continue to next attempt
             pass
     raise Exception(
         f"Error: Unable to fetch image from URL after 3 attempts. url={url}"

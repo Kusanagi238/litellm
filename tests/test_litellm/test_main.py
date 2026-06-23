@@ -5,11 +5,8 @@ import sys
 import httpx
 import pytest
 import respx
-from fastapi.testclient import TestClient
 
-sys.path.insert(
-    0, os.path.abspath("../..")
-)  # Adds the parent directory to the system path
+sys.path.insert(0, os.path.abspath("../.."))  # Adds the parent directory to the system path
 
 import urllib.parse
 from unittest.mock import MagicMock, patch
@@ -85,9 +82,7 @@ def test_completion_missing_role(openai_api_response):
 
     print(f"openai_api_response: {openai_api_response}")
 
-    with patch.object(
-        client.chat.completions.with_raw_response, "create", mock_raw_response
-    ) as mock_create:
+    with patch.object(client.chat.completions.with_raw_response, "create", mock_raw_response) as mock_create:
         litellm.completion(
             model="gpt-4o-mini",
             messages=[
@@ -151,6 +146,7 @@ async def test_url_with_format_param(model, sync_mode, monkeypatch):
     else:
         client = AsyncHTTPHandler()
 
+    # Use a data URI for the image to avoid external network fetches in CI
     args = {
         "model": model,
         "messages": [
@@ -160,7 +156,7 @@ async def test_url_with_format_param(model, sync_mode, monkeypatch):
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=",
                             "format": "image/png",
                         },
                     },
@@ -170,14 +166,11 @@ async def test_url_with_format_param(model, sync_mode, monkeypatch):
         ],
     }
     with patch.object(client, "post", new=MagicMock()) as mock_client:
-        try:
-            if sync_mode:
-                response = completion(**args, client=client)
-            else:
-                response = await acompletion(**args, client=client)
-            print(response)
-        except Exception as e:
-            pass
+        if sync_mode:
+            response = completion(**args, client=client)
+        else:
+            response = await acompletion(**args, client=client)
+        print(response)
 
         mock_client.assert_called()
 
@@ -227,9 +220,7 @@ async def test_url_with_format_param_openai(model, sync_mode):
             }
         ],
     }
-    with patch.object(
-        client.chat.completions.with_raw_response, "create"
-    ) as mock_client:
+    with patch.object(client.chat.completions.with_raw_response, "create") as mock_client:
         try:
             if sync_mode:
                 response = completion(**args, client=client)
@@ -269,11 +260,7 @@ def test_bedrock_latency_optimized_inference():
 
 
 def test_custom_provider_with_extra_headers():
-    from litellm.llms.custom_httpx.http_handler import HTTPHandler
-
-    with patch.object(
-        litellm.llms.custom_httpx.http_handler.HTTPHandler, "post"
-    ) as mock_post:
+    with patch.object(litellm.llms.custom_httpx.http_handler.HTTPHandler, "post") as mock_post:
         response = litellm.completion(
             model="custom/custom",
             messages=[{"role": "user", "content": "Hello, how are you?"}],
@@ -286,11 +273,7 @@ def test_custom_provider_with_extra_headers():
 
 
 def test_custom_provider_with_extra_body():
-    from litellm.llms.custom_httpx.http_handler import HTTPHandler
-
-    with patch.object(
-        litellm.llms.custom_httpx.http_handler.HTTPHandler, "post"
-    ) as mock_post:
+    with patch.object(litellm.llms.custom_httpx.http_handler.HTTPHandler, "post") as mock_post:
         response = litellm.completion(
             model="custom/custom",
             messages=[{"role": "user", "content": "Hello, how are you?"}],
@@ -317,9 +300,7 @@ def test_custom_provider_with_extra_body():
         }
 
     # test that extra_body is not passed if not provided
-    with patch.object(
-        litellm.llms.custom_httpx.http_handler.HTTPHandler, "post"
-    ) as mock_post:
+    with patch.object(litellm.llms.custom_httpx.http_handler.HTTPHandler, "post") as mock_post:
         response = litellm.completion(
             model="custom/custom",
             messages=[{"role": "user", "content": "Hello, how are you?"}],
@@ -350,9 +331,7 @@ def set_openrouter_api_key():
 
 
 @pytest.mark.asyncio
-async def test_extra_body_with_fallback(
-    respx_mock: respx.MockRouter, set_openrouter_api_key
-):
+async def test_extra_body_with_fallback(respx_mock: respx.MockRouter, set_openrouter_api_key):
     """
     test regression for https://github.com/BerriAI/litellm/issues/8425.
 
@@ -422,9 +401,7 @@ async def test_extra_body_with_fallback(
 
 @pytest.mark.parametrize("env_base", ["OPENAI_BASE_URL", "OPENAI_API_BASE"])
 @pytest.mark.asyncio
-async def test_openai_env_base(
-    respx_mock: respx.MockRouter, env_base, openai_api_response, monkeypatch
-):
+async def test_openai_env_base(respx_mock: respx.MockRouter, env_base, openai_api_response, monkeypatch):
     "This tests OpenAI env variables are honored, including legacy OPENAI_API_BASE"
     litellm.disable_aiohttp_transport = True
 
@@ -522,9 +499,7 @@ def test_responses_api_bridge_check_handles_exception():
     with patch("litellm.main._get_model_info_helper") as mock_get_model_info:
         mock_get_model_info.side_effect = Exception("Model not found")
 
-        model_info, model = responses_api_bridge_check(
-            model="responses/custom-model", custom_llm_provider="custom"
-        )
+        model_info, model = responses_api_bridge_check(model="responses/custom-model", custom_llm_provider="custom")
 
         assert model == "custom-model"
         assert model_info["mode"] == "responses"
