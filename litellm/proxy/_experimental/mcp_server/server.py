@@ -290,13 +290,15 @@ if MCP_AVAILABLE:
             allowed_mcp_servers = [
                 server_id
                 for server_id in allowed_mcp_servers
+                mcp = global_mcp_server_manager.get_mcp_server_by_id(server_id)
+                aliases = []
+                if mcp is not None:
+                    aliases.append(mcp.alias)
+                    aliases.append(mcp.server_name)
+                aliases.append(server_id)
                 if any(
                     server_alias.lower() in mcp_servers_lower
-                    for server_alias in [
-                        global_mcp_server_manager.get_mcp_server_by_id(server_id).alias,
-                        global_mcp_server_manager.get_mcp_server_by_id(server_id).server_name,
-                        server_id,
-                    ]
+                    for server_alias in aliases
                     if server_alias is not None
                 )
             ]

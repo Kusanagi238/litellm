@@ -147,13 +147,23 @@ from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.litellm_core_utils.sensitive_data_masker import SensitiveDataMasker
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
-from litellm.proxy._experimental.mcp_server.rest_endpoints import (
-    router as mcp_rest_endpoints_router,
-)
-from litellm.proxy._experimental.mcp_server.server import app as mcp_app
-from litellm.proxy._experimental.mcp_server.tool_registry import (
-    global_mcp_tool_registry,
-)
+import importlib
+
+mcp_rest_endpoints_router = None
+mcp_app = None
+global_mcp_tool_registry = None
+try:
+    _mcp_rest_mod = importlib.import_module("litellm.proxy._experimental.mcp_server.rest_endpoints")
+    mcp_rest_endpoints_router = getattr(_mcp_rest_mod, "router", None)
+
+    _mcp_server_mod = importlib.import_module("litellm.proxy._experimental.mcp_server.server")
+    mcp_app = getattr(_mcp_server_mod, "app", None)
+
+    _mcp_tool_mod = importlib.import_module("litellm.proxy._experimental.mcp_server.tool_registry")
+    global_mcp_tool_registry = getattr(_mcp_tool_mod, "global_mcp_tool_registry", None)
+except Exception:
+    # experimental MCP server not available or import failed; continue without it
+    pass
 from litellm.proxy._types import *
 from litellm.proxy.analytics_endpoints.analytics_endpoints import (
     router as analytics_router,
@@ -2202,15 +2212,19 @@ class ProxyConfig:
 
         mcp_servers_config = config.get("mcp_servers", None)
         if mcp_servers_config:
-            from litellm.proxy._experimental.mcp_server.mcp_server_manager import (
-                global_mcp_server_manager,
-            )
+            try:
+                import importlib
+                _mcp_mgr_mod = importlib.import_module("litellm.proxy._experimental.mcp_server.mcp_server_manager")
+                global_mcp_server_manager = getattr(_mcp_mgr_mod, "global_mcp_server_manager", None)
+            except Exception:
+                global_mcp_server_manager = None
 
             # Get mcp_aliases from litellm_settings if available
             litellm_settings = config.get("litellm_settings", {})
             mcp_aliases = litellm_settings.get("mcp_aliases", None)
 
-            global_mcp_server_manager.load_servers_from_config(mcp_servers_config, mcp_aliases)
+            if global_mcp_server_manager:
+                global_mcp_server_manager.load_servers_from_config(mcp_servers_config, mcp_aliases)
 
         ## VECTOR STORES
         vector_store_registry_config = config.get("vector_store_registry", None)
