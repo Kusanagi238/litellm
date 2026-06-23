@@ -1,15 +1,11 @@
-import json
 import os
 import sys
 from datetime import datetime
-from typing import Dict, List, Optional
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.insert(
-    0, os.path.abspath("../../..")
-)  # Adds the parent directory to the system path
+sys.path.insert(0, os.path.abspath("../../.."))  # Adds the parent directory to the system path
 
 from fastapi import HTTPException
 
@@ -18,10 +14,9 @@ from litellm.proxy.guardrails.guardrail_endpoints import (
     list_guardrails_v2,
 )
 from litellm.proxy.guardrails.guardrail_registry import (
-    IN_MEMORY_GUARDRAIL_HANDLER,
     InMemoryGuardrailHandler,
 )
-from litellm.types.guardrails import GuardrailInfoResponse, LitellmParams
+from litellm.types.guardrails import LitellmParams
 
 # Mock data for testing
 MOCK_DB_GUARDRAIL = {
@@ -36,15 +31,26 @@ MOCK_DB_GUARDRAIL = {
     "updated_at": datetime.now(),
 }
 
-MOCK_CONFIG_GUARDRAIL = {
-    "guardrail_id": "test-config-guardrail",
-    "guardrail_name": "Test Config Guardrail",
-    "litellm_params": {
-        "guardrail": "custom_guardrail.myCustomGuardrail",
-        "mode": "during_call",
-    },
-    "guardrail_info": {"description": "Test guardrail from config"},
-}
+
+class _MockModel:
+    def __init__(self, data):
+        self._data = data
+
+    def model_dump(self):
+        return self._data
+
+
+MOCK_CONFIG_GUARDRAIL = _MockModel(
+    {
+        "guardrail_id": "test-config-guardrail",
+        "guardrail_name": "Test Config Guardrail",
+        "litellm_params": {
+            "guardrail": "custom_guardrail.myCustomGuardrail",
+            "mode": "during_call",
+        },
+        "guardrail_info": {"description": "Test guardrail from config"},
+    }
+)
 
 
 @pytest.fixture
@@ -54,12 +60,17 @@ def mock_prisma_client(mocker):
     # Create async mocks for the database methods
     mock_client.db = mocker.Mock()
     mock_client.db.litellm_guardrailstable = mocker.Mock()
-    mock_client.db.litellm_guardrailstable.find_many = AsyncMock(
-        return_value=[MOCK_DB_GUARDRAIL]
-    )
-    mock_client.db.litellm_guardrailstable.find_unique = AsyncMock(
-        return_value=MOCK_DB_GUARDRAIL
-    )
+
+    # Wrap returned DB dicts in a lightweight mock model that provides model_dump()
+    class _MockModel:
+        def __init__(self, data):
+            self._data = data
+
+        def model_dump(self):
+            return self._data
+
+    mock_client.db.litellm_guardrailstable.find_many = AsyncMock(return_value=[_MockModel(MOCK_DB_GUARDRAIL)])
+    mock_client.db.litellm_guardrailstable.find_unique = AsyncMock(return_value=_MockModel(MOCK_DB_GUARDRAIL))
     return mock_client
 
 
@@ -67,15 +78,22 @@ def mock_prisma_client(mocker):
 def mock_in_memory_handler(mocker):
     """Mock InMemoryGuardrailHandler for testing"""
     mock_handler = mocker.Mock(spec=InMemoryGuardrailHandler)
-    mock_handler.list_in_memory_guardrails.return_value = [MOCK_CONFIG_GUARDRAIL]
-    mock_handler.get_guardrail_by_id.return_value = MOCK_CONFIG_GUARDRAIL
+
+    # Wrap config dicts in a lightweight mock model that provides model_dump()
+    class _MockModel:
+        def __init__(self, data):
+            self._data = data
+
+        def model_dump(self):
+            return self._data
+
+    mock_handler.list_in_memory_guardrails.return_value = [_MockModel(MOCK_CONFIG_GUARDRAIL)]
+    mock_handler.get_guardrail_by_id.return_value = _MockModel(MOCK_CONFIG_GUARDRAIL)
     return mock_handler
 
 
 @pytest.mark.asyncio
-async def test_list_guardrails_v2_with_db_and_config(
-    mocker, mock_prisma_client, mock_in_memory_handler
-):
+async def test_list_guardrails_v2_with_db_and_config(mocker, mock_prisma_client, mock_in_memory_handler):
     """Test listing guardrails from both DB and config"""
     # Mock the prisma client
     mocker.patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client)
@@ -90,17 +108,13 @@ async def test_list_guardrails_v2_with_db_and_config(
     assert len(response.guardrails) == 2
 
     # Check DB guardrail
-    db_guardrail = next(
-        g for g in response.guardrails if g.guardrail_id == "test-db-guardrail"
-    )
+    db_guardrail = next(g for g in response.guardrails if g.guardrail_id == "test-db-guardrail")
     assert db_guardrail.guardrail_name == "Test DB Guardrail"
     assert db_guardrail.guardrail_definition_location == "db"
     assert isinstance(db_guardrail.litellm_params, LitellmParams)
 
     # Check config guardrail
-    config_guardrail = next(
-        g for g in response.guardrails if g.guardrail_id == "test-config-guardrail"
-    )
+    config_guardrail = next(g for g in response.guardrails if g.guardrail_id == "test-config-guardrail")
     assert config_guardrail.guardrail_name == "Test Config Guardrail"
     assert config_guardrail.guardrail_definition_location == "config"
     assert isinstance(config_guardrail.litellm_params, LitellmParams)
@@ -120,9 +134,7 @@ async def test_get_guardrail_info_from_db(mocker, mock_prisma_client):
 
 
 @pytest.mark.asyncio
-async def test_get_guardrail_info_from_config(
-    mocker, mock_prisma_client, mock_in_memory_handler
-):
+async def test_get_guardrail_info_from_config(mocker, mock_prisma_client, mock_in_memory_handler):
     """Test getting guardrail info from config when not found in DB"""
     mocker.patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client)
     mocker.patch(
@@ -131,9 +143,7 @@ async def test_get_guardrail_info_from_config(
     )
 
     # Mock DB to return None
-    mock_prisma_client.db.litellm_guardrailstable.find_unique = AsyncMock(
-        return_value=None
-    )
+    mock_prisma_client.db.litellm_guardrailstable.find_unique = AsyncMock(return_value=None)
 
     response = await get_guardrail_info("test-config-guardrail")
 
@@ -144,9 +154,7 @@ async def test_get_guardrail_info_from_config(
 
 
 @pytest.mark.asyncio
-async def test_get_guardrail_info_not_found(
-    mocker, mock_prisma_client, mock_in_memory_handler
-):
+async def test_get_guardrail_info_not_found(mocker, mock_prisma_client, mock_in_memory_handler):
     """Test getting guardrail info when not found in either DB or config"""
     mocker.patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client)
     mocker.patch(
@@ -155,9 +163,7 @@ async def test_get_guardrail_info_not_found(
     )
 
     # Mock both DB and in-memory handler to return None
-    mock_prisma_client.db.litellm_guardrailstable.find_unique = AsyncMock(
-        return_value=None
-    )
+    mock_prisma_client.db.litellm_guardrailstable.find_unique = AsyncMock(return_value=None)
     mock_in_memory_handler.get_guardrail_by_id.return_value = None
 
     with pytest.raises(HTTPException) as exc_info:
@@ -174,9 +180,7 @@ def test_get_provider_specific_params():
         AzureContentSafetyTextModerationGuardrail,
     )
 
-    fields = _get_fields_from_model(
-        AzureContentSafetyTextModerationGuardrail.get_config_model()
-    )
+    fields = _get_fields_from_model(AzureContentSafetyTextModerationGuardrail.get_config_model())
     print("FIELDS", fields)
 
     # Test that we get the expected nested structure
@@ -189,10 +193,7 @@ def test_get_provider_specific_params():
     assert "optional_params" in fields
 
     # Check the structure of a simple field
-    assert (
-        fields["api_key"]["description"]
-        == "API key for the Azure Content Safety Prompt Shield guardrail"
-    )
+    assert fields["api_key"]["description"] == "API key for the Azure Content Safety Prompt Shield guardrail"
     assert fields["api_key"]["required"] == False
     assert fields["api_key"]["type"] == "string"  # Should be string, not None
 
@@ -216,14 +217,10 @@ def test_get_provider_specific_params():
         == "Severity threshold for the Azure Content Safety Text Moderation guardrail across all categories"
     )
     assert nested_fields["severity_threshold"]["required"] == False
-    assert (
-        nested_fields["severity_threshold"]["type"] == "number"
-    )  # Should be number, not None
+    assert nested_fields["severity_threshold"]["type"] == "number"  # Should be number, not None
 
     # Check other field types
     assert nested_fields["categories"]["type"] == "multiselect"
     assert nested_fields["blocklistNames"]["type"] == "array"
     assert nested_fields["haltOnBlocklistHit"]["type"] == "boolean"
-    assert (
-        nested_fields["outputType"]["type"] == "select"
-    )  # Literal type should be select
+    assert nested_fields["outputType"]["type"] == "select"  # Literal type should be select
