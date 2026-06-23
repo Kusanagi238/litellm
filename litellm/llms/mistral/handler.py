@@ -15,7 +15,7 @@ base_llm_http_handler = BaseLLMHTTPHandler()
 def completion(
     model: str,
     messages: list,
-    api_base: str,
+    api_base: Optional[str],
     custom_llm_provider: str,
     model_response: ModelResponse,
     encoding,
