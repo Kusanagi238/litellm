@@ -227,9 +227,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
             supported_params.append("thinking")
         return supported_params
 
-    def map_tool_choice_values(
-        self, model: str, tool_choice: Union[str, dict]
-    ) -> Optional[ToolConfig]:
+    def map_tool_choice_values(self, model: str, tool_choice: Union[str, dict]) -> Optional[ToolConfig]:
         if tool_choice == "none":
             return ToolConfig(functionCallingConfig=FunctionCallingConfig(mode="NONE"))
         elif tool_choice == "required":
@@ -239,11 +237,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         elif isinstance(tool_choice, dict):
             # only supported for anthropic + mistral models - https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
             name = tool_choice.get("function", {}).get("name", "")
-            return ToolConfig(
-                functionCallingConfig=FunctionCallingConfig(
-                    mode="ANY", allowed_function_names=[name]
-                )
-            )
+            return ToolConfig(functionCallingConfig=FunctionCallingConfig(mode="ANY", allowed_function_names=[name]))
         else:
             raise litellm.utils.UnsupportedParamsError(
                 message="VertexAI doesn't support tool_choice={}. Supported tool_choice values=['auto', 'required', json object]. To drop it from the call, set `litellm.drop_params = True.".format(
@@ -283,9 +277,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 Optional[dict]: The tool value if found, None otherwise
             """
             # Convert camelCase to underscore_case
-            underscore_name = "".join(
-                ["_" + c.lower() if c.isupper() else c for c in tool_name]
-            ).lstrip("_")
+            underscore_name = "".join(["_" + c.lower() if c.isupper() else c for c in tool_name]).lstrip("_")
             # Try both camelCase and underscore_case variants
 
             if tool.get(tool_name) is not None:
@@ -296,21 +288,16 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 return None
 
         for tool in value:
-            openai_function_object: Optional[
-                ChatCompletionToolParamFunctionChunk
-            ] = None
+            openai_function_object: Optional[ChatCompletionToolParamFunctionChunk] = None
             if "function" in tool:  # tools list
                 _openai_function_object = ChatCompletionToolParamFunctionChunk(  # type: ignore
                     **tool["function"]
                 )
 
                 if (
-                    "parameters" in _openai_function_object
-                    and _openai_function_object["parameters"] is not None
+                    "parameters" in _openai_function_object and _openai_function_object["parameters"] is not None
                 ):  # OPENAI accepts JSON Schema, Google accepts OpenAPI schema.
-                    _openai_function_object["parameters"] = _build_vertex_schema(
-                        _openai_function_object["parameters"]
-                    )
+                    _openai_function_object["parameters"] = _build_vertex_schema(_openai_function_object["parameters"])
 
                 openai_function_object = _openai_function_object
 
@@ -363,14 +350,10 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         if isinstance(old_schema, list):
             for item in old_schema:
                 if isinstance(item, dict):
-                    item = _build_vertex_schema(
-                        parameters=item, add_property_ordering=True
-                    )
+                    item = _build_vertex_schema(parameters=item, add_property_ordering=True)
 
         elif isinstance(old_schema, dict):
-            old_schema = _build_vertex_schema(
-                parameters=old_schema, add_property_ordering=True
-            )
+            old_schema = _build_vertex_schema(parameters=old_schema, add_property_ordering=True)
         return old_schema
 
     def apply_response_schema_transformation(self, value: dict, optional_params: dict):
@@ -391,12 +374,8 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 optional_params["response_mime_type"] = "application/json"
                 optional_params["response_schema"] = new_value["json_schema"]["schema"]  # type: ignore
 
-        if "response_schema" in optional_params and isinstance(
-            optional_params["response_schema"], dict
-        ):
-            optional_params["response_schema"] = self._map_response_schema(
-                value=optional_params["response_schema"]
-            )
+        if "response_schema" in optional_params and isinstance(optional_params["response_schema"], dict):
+            optional_params["response_schema"] = self._map_response_schema(value=optional_params["response_schema"])
 
     @staticmethod
     def _map_reasoning_effort_to_thinking_budget(
@@ -432,9 +411,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         thinking_budget = thinking_param.get("budget_tokens")
 
         params: GeminiThinkingConfig = {}
-        if thinking_enabled and not VertexGeminiConfig._is_thinking_budget_zero(
-            thinking_budget
-        ):
+        if thinking_enabled and not VertexGeminiConfig._is_thinking_budget_zero(thinking_budget):
             params["includeThoughts"] = True
         if thinking_budget is not None and isinstance(thinking_budget, int):
             params["thinkingBudget"] = thinking_budget
@@ -461,93 +438,110 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         model: str,
         drop_params: bool,
     ) -> Dict:
+        # Helper functions to reduce branching and overall statement count
+        def _set(key: str, val: Any) -> None:
+            optional_params[key] = val
+
+        def _map_stop(val: Any) -> None:
+            if isinstance(val, str):
+                optional_params["stop_sequences"] = [val]
+            elif isinstance(val, list):
+                optional_params["stop_sequences"] = val
+
+        def _add_tools_from_list(val: Any) -> None:
+            # value is a list of functions/tools declarations
+            if isinstance(val, list) and val:
+                nonlocal optional_params
+                optional_params = self._add_tools_to_optional_params(optional_params, self._map_function(value=val))
+
+        def _handle_parallel_tool_calls(val: Any) -> None:
+            if val is False and not (drop_params or litellm.drop_params):
+                tools = non_default_params.get("tools", non_default_params.get("functions"))
+                num_function_declarations = len(tools) if isinstance(tools, list) else 0
+                if num_function_declarations > 1:
+                    raise litellm.utils.UnsupportedParamsError(
+                        message=(
+                            "`parallel_tool_calls=False` is not supported when multiple tools are "
+                            "provided for Gemini. Specify a single tool, or set "
+                            "`parallel_tool_calls=True`. If you want to drop this param, set `litellm.drop_params = True` or pass in `(.., drop_params=True)` in the requst - https://docs.litellm.ai/docs/completion/drop_params"
+                        ),
+                        status_code=400,
+                    )
+            else:
+                optional_params["parallel_tool_calls"] = val
+
+        def _map_web_search_options(val: Any) -> None:
+            if val and isinstance(val, dict):
+                _tools = self._map_web_search_options(val)
+                nonlocal optional_params
+                optional_params = self._add_tools_to_optional_params(optional_params, [_tools])
+
+        # simple direct mappings where key names align or have simple translation
+        simple_map = {
+            "temperature": "temperature",
+            "top_p": "top_p",
+            "frequency_penalty": "frequency_penalty",
+            "presence_penalty": "presence_penalty",
+            "seed": "seed",
+            "n": "candidate_count",
+            "logprobs": "responseLogprobs",
+            "top_logprobs": "logprobs",
+            "max_tokens": "max_output_tokens",
+            "max_completion_tokens": "max_output_tokens",
+        }
+
         for param, value in non_default_params.items():
-            if param == "temperature":
-                optional_params["temperature"] = value
-            elif param == "top_p":
-                optional_params["top_p"] = value
-            elif (
-                param == "stream" and value is True
-            ):  # sending stream = False, can cause it to get passed unchecked and raise issues
-                optional_params["stream"] = value
-            elif param == "n":
-                optional_params["candidate_count"] = value
-            elif param == "stop":
-                if isinstance(value, str):
-                    optional_params["stop_sequences"] = [value]
-                elif isinstance(value, list):
-                    optional_params["stop_sequences"] = value
-            elif param == "max_tokens" or param == "max_completion_tokens":
-                optional_params["max_output_tokens"] = value
-            elif param == "response_format" and isinstance(value, dict):  # type: ignore
-                self.apply_response_schema_transformation(
-                    value=value, optional_params=optional_params
-                )
-            elif param == "frequency_penalty":
-                optional_params["frequency_penalty"] = value
-            elif param == "presence_penalty":
-                optional_params["presence_penalty"] = value
-            elif param == "logprobs":
-                optional_params["responseLogprobs"] = value
-            elif param == "top_logprobs":
-                optional_params["logprobs"] = value
-            elif (
-                (param == "tools" or param == "functions")
-                and isinstance(value, list)
-                and value
-            ):
-                optional_params = self._add_tools_to_optional_params(
-                    optional_params, self._map_function(value=value)
-                )
-            elif param == "tool_choice" and (
-                isinstance(value, str) or isinstance(value, dict)
-            ):
-                _tool_choice_value = self.map_tool_choice_values(
-                    model=model, tool_choice=value  # type: ignore
-                )
+            if param in simple_map:
+                _set(simple_map[param], value)
+                continue
+
+            if param == "stream":
+                # sending stream = False can cause it to get passed unchecked and raise issues
+                if value is True:
+                    _set("stream", value)
+                continue
+
+            if param == "stop":
+                _map_stop(value)
+                continue
+
+            if param == "response_format" and isinstance(value, dict):  # type: ignore
+                self.apply_response_schema_transformation(value=value, optional_params=optional_params)
+                continue
+
+            if param in ("tools", "functions"):
+                _add_tools_from_list(value)
+                continue
+
+            if param == "tool_choice" and (isinstance(value, str) or isinstance(value, dict)):
+                _tool_choice_value = self.map_tool_choice_values(model=model, tool_choice=value)  # type: ignore
                 if _tool_choice_value is not None:
                     optional_params["tool_choice"] = _tool_choice_value
-            elif param == "parallel_tool_calls":
-                if value is False and not (
-                    drop_params or litellm.drop_params
-                ):  # if drop params is True, then we should just ignore this
-                    tools = non_default_params.get(
-                        "tools", non_default_params.get("functions")
-                    )
-                    num_function_declarations = (
-                        len(tools) if isinstance(tools, list) else 0
-                    )
-                    if num_function_declarations > 1:
-                        raise litellm.utils.UnsupportedParamsError(
-                            message=(
-                                "`parallel_tool_calls=False` is not supported when multiple tools are "
-                                "provided for Gemini. Specify a single tool, or set "
-                                "`parallel_tool_calls=True`. If you want to drop this param, set `litellm.drop_params = True` or pass in `(.., drop_params=True)` in the requst - https://docs.litellm.ai/docs/completion/drop_params"
-                            ),
-                            status_code=400,
-                        )
-                else:
-                    optional_params["parallel_tool_calls"] = value
-            elif param == "seed":
-                optional_params["seed"] = value
-            elif param == "reasoning_effort" and isinstance(value, str):
-                optional_params[
-                    "thinkingConfig"
-                ] = VertexGeminiConfig._map_reasoning_effort_to_thinking_budget(value)
-            elif param == "thinking":
-                optional_params[
-                    "thinkingConfig"
-                ] = VertexGeminiConfig._map_thinking_param(
+                continue
+
+            if param == "parallel_tool_calls":
+                _handle_parallel_tool_calls(value)
+                continue
+
+            if param == "reasoning_effort" and isinstance(value, str):
+                optional_params["thinkingConfig"] = VertexGeminiConfig._map_reasoning_effort_to_thinking_budget(value)
+                continue
+
+            if param == "thinking":
+                optional_params["thinkingConfig"] = VertexGeminiConfig._map_thinking_param(
                     cast(AnthropicThinkingParam, value)
                 )
-            elif param == "modalities" and isinstance(value, list):
+                continue
+
+            if param == "modalities" and isinstance(value, list):
                 response_modalities = self.map_response_modalities(value)
                 optional_params["responseModalities"] = response_modalities
-            elif param == "web_search_options" and value and isinstance(value, dict):
-                _tools = self._map_web_search_options(value)
-                optional_params = self._add_tools_to_optional_params(
-                    optional_params, [_tools]
-                )
+                continue
+
+            if param == "web_search_options":
+                _map_web_search_options(value)
+                continue
+
         if litellm.vertex_ai_safety_settings is not None:
             optional_params["safety_settings"] = litellm.vertex_ai_safety_settings
         return optional_params
@@ -672,9 +666,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
             )
         return exception_string
 
-    def get_assistant_content_message(
-        self, parts: List[HttpxPartType]
-    ) -> Tuple[Optional[str], Optional[str]]:
+    def get_assistant_content_message(self, parts: List[HttpxPartType]) -> Tuple[Optional[str], Optional[str]]:
         content_str: Optional[str] = None
         reasoning_content_str: Optional[str] = None
         for part in parts:
@@ -682,9 +674,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
             if "text" in part:
                 _content_str += part["text"]
             elif "inlineData" in part:  # base64 encoded image
-                _content_str += "data:{};base64,{}".format(
-                    part["inlineData"]["mimeType"], part["inlineData"]["data"]
-                )
+                _content_str += "data:{};base64,{}".format(part["inlineData"]["mimeType"], part["inlineData"]["data"])
             if len(_content_str) > 0:
                 if part.get("thought") is True:
                     if reasoning_content_str is None:
@@ -730,9 +720,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
             tools = _tools
         return function, tools
 
-    def _transform_logprobs(
-        self, logprobs_result: Optional[LogprobsResult]
-    ) -> Optional[ChoiceLogprobs]:
+    def _transform_logprobs(self, logprobs_result: Optional[LogprobsResult]) -> Optional[ChoiceLogprobs]:
         if logprobs_result is None:
             return None
         if "chosenCandidates" not in logprobs_result:
@@ -740,19 +728,11 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         logprobs_list: List[ChatCompletionTokenLogprob] = []
         for index, candidate in enumerate(logprobs_result["chosenCandidates"]):
             top_logprobs: List[TopLogprob] = []
-            if "topCandidates" in logprobs_result and index < len(
-                logprobs_result["topCandidates"]
-            ):
-                top_candidates_for_index = logprobs_result["topCandidates"][index][
-                    "candidates"
-                ]
+            if "topCandidates" in logprobs_result and index < len(logprobs_result["topCandidates"]):
+                top_candidates_for_index = logprobs_result["topCandidates"][index]["candidates"]
 
                 for options in top_candidates_for_index:
-                    top_logprobs.append(
-                        TopLogprob(
-                            token=options["token"], logprob=options["logProbability"]
-                        )
-                    )
+                    top_logprobs.append(TopLogprob(token=options["token"], logprob=options["logProbability"]))
             logprobs_list.append(
                 ChatCompletionTokenLogprob(
                     token=candidate["token"],
@@ -787,12 +767,8 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
 
         ## GET USAGE ##
         usage = Usage(
-            prompt_tokens=completion_response["usageMetadata"].get(
-                "promptTokenCount", 0
-            ),
-            completion_tokens=completion_response["usageMetadata"].get(
-                "candidatesTokenCount", 0
-            ),
+            prompt_tokens=completion_response["usageMetadata"].get("promptTokenCount", 0),
+            completion_tokens=completion_response["usageMetadata"].get("candidatesTokenCount", 0),
             total_tokens=completion_response["usageMetadata"].get("totalTokenCount", 0),
         )
 
@@ -825,12 +801,8 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
 
         ## GET USAGE ##
         usage = Usage(
-            prompt_tokens=completion_response["usageMetadata"].get(
-                "promptTokenCount", 0
-            ),
-            completion_tokens=completion_response["usageMetadata"].get(
-                "candidatesTokenCount", 0
-            ),
+            prompt_tokens=completion_response["usageMetadata"].get("promptTokenCount", 0),
+            completion_tokens=completion_response["usageMetadata"].get("candidatesTokenCount", 0),
             total_tokens=completion_response["usageMetadata"].get("totalTokenCount", 0),
         )
 
@@ -857,14 +829,10 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
 
     def _calculate_usage(
         self,
-        completion_response: Union[
-            GenerateContentResponseBody, BidiGenerateContentServerMessage
-        ],
+        completion_response: Union[GenerateContentResponseBody, BidiGenerateContentServerMessage],
     ) -> Usage:
         if "usageMetadata" not in completion_response:
-            raise ValueError(
-                f"usageMetadata not found in completion_response. Got={completion_response}"
-            )
+            raise ValueError(f"usageMetadata not found in completion_response. Got={completion_response}")
         cached_tokens: Optional[int] = None
         audio_tokens: Optional[int] = None
         text_tokens: Optional[int] = None
@@ -873,9 +841,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         response_tokens: Optional[int] = None
         response_tokens_details: Optional[CompletionTokensDetailsWrapper] = None
         if "cachedContentTokenCount" in completion_response["usageMetadata"]:
-            cached_tokens = completion_response["usageMetadata"][
-                "cachedContentTokenCount"
-            ]
+            cached_tokens = completion_response["usageMetadata"]["cachedContentTokenCount"]
 
         ## GEMINI LIVE API ONLY PARAMS ##
         if "responseTokenCount" in completion_response["usageMetadata"]:
@@ -896,30 +862,19 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 elif detail["modality"] == "TEXT":
                     text_tokens = detail["tokenCount"]
         if "thoughtsTokenCount" in completion_response["usageMetadata"]:
-            reasoning_tokens = completion_response["usageMetadata"][
-                "thoughtsTokenCount"
-            ]
+            reasoning_tokens = completion_response["usageMetadata"]["thoughtsTokenCount"]
         prompt_tokens_details = PromptTokensDetailsWrapper(
             cached_tokens=cached_tokens,
             audio_tokens=audio_tokens,
             text_tokens=text_tokens,
         )
 
-        completion_tokens = response_tokens or completion_response["usageMetadata"].get(
-            "candidatesTokenCount", 0
-        )
-        if (
-            not self.is_candidate_token_count_inclusive(
-                completion_response["usageMetadata"]
-            )
-            and reasoning_tokens
-        ):
+        completion_tokens = response_tokens or completion_response["usageMetadata"].get("candidatesTokenCount", 0)
+        if not self.is_candidate_token_count_inclusive(completion_response["usageMetadata"]) and reasoning_tokens:
             completion_tokens = reasoning_tokens + completion_tokens
         ## GET USAGE ##
         usage = Usage(
-            prompt_tokens=completion_response["usageMetadata"].get(
-                "promptTokenCount", 0
-            ),
+            prompt_tokens=completion_response["usageMetadata"].get("promptTokenCount", 0),
             completion_tokens=completion_tokens,
             total_tokens=completion_response["usageMetadata"].get("totalTokenCount", 0),
             prompt_tokens_details=prompt_tokens_details,
@@ -939,16 +894,12 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
             return "function_call"
         elif chat_completion_message and chat_completion_message.get("tool_calls"):
             return "tool_calls"
-        elif (
-            finish_reason and finish_reason in mapped_finish_reason.keys()
-        ):  # vertex ai
+        elif finish_reason and finish_reason in mapped_finish_reason.keys():  # vertex ai
             return mapped_finish_reason[finish_reason]
         else:
             return "stop"
 
-    def _process_candidates(
-        self, _candidates, model_response, standard_optional_params: dict
-    ):
+    def _process_candidates(self, _candidates, model_response, standard_optional_params: dict):
         """Helper method to process candidates and extract metadata"""
         from litellm.litellm_core_utils.prompt_templates.common_utils import (
             is_function_call,
@@ -979,9 +930,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 (
                     content,
                     reasoning_content,
-                ) = VertexGeminiConfig().get_assistant_content_message(
-                    parts=candidate["content"]["parts"]
-                )
+                ) = VertexGeminiConfig().get_assistant_content_message(parts=candidate["content"]["parts"])
                 if content is not None:
                     chat_completion_message["content"] = content
                 if reasoning_content is not None:
@@ -994,9 +943,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 )
 
             if "logprobsResult" in candidate:
-                chat_completion_logprobs = self._transform_logprobs(
-                    logprobs_result=candidate["logprobsResult"]
-                )
+                chat_completion_logprobs = self._transform_logprobs(logprobs_result=candidate["logprobsResult"])
 
             if tools:
                 chat_completion_message["tool_calls"] = tools
@@ -1005,9 +952,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                 chat_completion_message["function_call"] = functions
 
             choice = litellm.Choices(
-                finish_reason=self._check_finish_reason(
-                    chat_completion_message, candidate.get("finishReason")
-                ),
+                finish_reason=self._check_finish_reason(chat_completion_message, candidate.get("finishReason")),
                 index=candidate.get("index", idx),
                 message=chat_completion_message,  # type: ignore
                 logprobs=chat_completion_logprobs,
@@ -1056,10 +1001,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         model_response.model = model
 
         ## CHECK IF RESPONSE FLAGGED
-        if (
-            "promptFeedback" in completion_response
-            and "blockReason" in completion_response["promptFeedback"]
-        ):
+        if "promptFeedback" in completion_response and "blockReason" in completion_response["promptFeedback"]:
             return self._handle_blocked_response(
                 model_response=model_response,
                 completion_response=completion_response,
@@ -1067,13 +1009,8 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
 
         _candidates = completion_response.get("candidates")
         if _candidates and len(_candidates) > 0:
-            content_policy_violations = (
-                VertexGeminiConfig().get_flagged_finish_reasons()
-            )
-            if (
-                "finishReason" in _candidates[0]
-                and _candidates[0]["finishReason"] in content_policy_violations.keys()
-            ):
+            content_policy_violations = VertexGeminiConfig().get_flagged_finish_reasons()
+            if "finishReason" in _candidates[0] and _candidates[0]["finishReason"] in content_policy_violations.keys():
                 return self._handle_content_policy_violation(
                     model_response=model_response,
                     completion_response=completion_response,
@@ -1088,29 +1025,25 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                     grounding_metadata,
                     safety_ratings,
                     citation_metadata,
-                ) = self._process_candidates(
-                    _candidates, model_response, logging_obj.optional_params
-                )
+                ) = self._process_candidates(_candidates, model_response, logging_obj.optional_params)
 
             usage = self._calculate_usage(completion_response=completion_response)
             setattr(model_response, "usage", usage)
 
             ## ADD METADATA TO RESPONSE ##
             setattr(model_response, "vertex_ai_grounding_metadata", grounding_metadata)
-            model_response._hidden_params[
-                "vertex_ai_grounding_metadata"
-            ] = grounding_metadata
+            model_response._hidden_params["vertex_ai_grounding_metadata"] = grounding_metadata
 
             setattr(model_response, "vertex_ai_safety_results", safety_ratings)
-            model_response._hidden_params[
-                "vertex_ai_safety_results"
-            ] = safety_ratings  # older approach - maintaining to prevent regressions
+            model_response._hidden_params["vertex_ai_safety_results"] = (
+                safety_ratings  # older approach - maintaining to prevent regressions
+            )
 
             ## ADD CITATION METADATA ##
             setattr(model_response, "vertex_ai_citation_metadata", citation_metadata)
-            model_response._hidden_params[
-                "vertex_ai_citation_metadata"
-            ] = citation_metadata  # older approach - maintaining to prevent regressions
+            model_response._hidden_params["vertex_ai_citation_metadata"] = (
+                citation_metadata  # older approach - maintaining to prevent regressions
+            )
 
         except Exception as e:
             raise VertexAIError(
@@ -1123,17 +1056,13 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
 
         return model_response
 
-    def _transform_messages(
-        self, messages: List[AllMessageValues]
-    ) -> List[ContentType]:
+    def _transform_messages(self, messages: List[AllMessageValues]) -> List[ContentType]:
         return _gemini_convert_messages_with_history(messages=messages)
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: Union[Dict, httpx.Headers]
     ) -> BaseLLMException:
-        return VertexAIError(
-            message=error_message, status_code=status_code, headers=headers
-        )
+        return VertexAIError(message=error_message, status_code=status_code, headers=headers)
 
     def transform_request(
         self,
@@ -1143,9 +1072,7 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
         litellm_params: Dict,
         headers: Dict,
     ) -> Dict:
-        raise NotImplementedError(
-            "Vertex AI has a custom implementation of transform_request. Needs sync + async."
-        )
+        raise NotImplementedError("Vertex AI has a custom implementation of transform_request. Needs sync + async.")
 
     def validate_environment(
         self,
@@ -1199,9 +1126,7 @@ async def make_call(
             headers=response.headers,
         )
 
-    completion_stream = ModelResponseIterator(
-        streaming_response=response.aiter_lines(), sync_stream=False
-    )
+    completion_stream = ModelResponseIterator(streaming_response=response.aiter_lines(), sync_stream=False)
     # LOGGING
     logging_obj.post_call(
         input=messages,
@@ -1237,9 +1162,7 @@ def make_sync_call(
             headers=response.headers,
         )
 
-    completion_stream = ModelResponseIterator(
-        streaming_response=response.iter_lines(), sync_stream=True
-    )
+    completion_stream = ModelResponseIterator(streaming_response=response.iter_lines(), sync_stream=True)
 
     # LOGGING
     logging_obj.post_call(
@@ -1283,9 +1206,7 @@ class VertexLLM(VertexBase):
     ) -> CustomStreamWrapper:
         request_body = await async_transform_request_body(**data)  # type: ignore
 
-        should_use_v1beta1_features = self.is_using_v1beta1_features(
-            optional_params=optional_params
-        )
+        should_use_v1beta1_features = self.is_using_v1beta1_features(optional_params=optional_params)
 
         _auth_header, vertex_project = await self._ensure_access_token_async(
             credentials=vertex_credentials,
@@ -1370,9 +1291,7 @@ class VertexLLM(VertexBase):
         gemini_api_key: Optional[str] = None,
         extra_headers: Optional[dict] = None,
     ) -> Union[ModelResponse, CustomStreamWrapper]:
-        should_use_v1beta1_features = self.is_using_v1beta1_features(
-            optional_params=optional_params
-        )
+        should_use_v1beta1_features = self.is_using_v1beta1_features(optional_params=optional_params)
 
         _auth_header, vertex_project = await self._ensure_access_token_async(
             credentials=vertex_credentials,
@@ -1407,9 +1326,7 @@ class VertexLLM(VertexBase):
         if timeout:
             _async_client_params["timeout"] = timeout
         if client is None or not isinstance(client, AsyncHTTPHandler):
-            client = get_async_httpx_client(
-                params=_async_client_params, llm_provider=litellm.LlmProviders.VERTEX_AI
-            )
+            client = get_async_httpx_client(params=_async_client_params, llm_provider=litellm.LlmProviders.VERTEX_AI)
         else:
             client = client  # type: ignore
         ## LOGGING
@@ -1424,9 +1341,7 @@ class VertexLLM(VertexBase):
         )
 
         try:
-            response = await client.post(
-                api_base, headers=headers, json=cast(dict, request_body)
-            )  # type: ignore
+            response = await client.post(api_base, headers=headers, json=cast(dict, request_body))  # type: ignore
             response.raise_for_status()
         except httpx.HTTPStatusError as err:
             error_code = err.response.status_code
@@ -1545,9 +1460,7 @@ class VertexLLM(VertexBase):
                 extra_headers=extra_headers,
             )
 
-        should_use_v1beta1_features = self.is_using_v1beta1_features(
-            optional_params=optional_params
-        )
+        should_use_v1beta1_features = self.is_using_v1beta1_features(optional_params=optional_params)
 
         _auth_header, vertex_project = self._ensure_access_token(
             credentials=vertex_credentials,
@@ -1597,11 +1510,7 @@ class VertexLLM(VertexBase):
                 completion_stream=None,
                 make_call=partial(
                     make_sync_call,
-                    gemini_client=(
-                        client
-                        if client is not None and isinstance(client, HTTPHandler)
-                        else None
-                    ),
+                    gemini_client=(client if client is not None and isinstance(client, HTTPHandler) else None),
                     api_base=url,
                     data=request_data_str,
                     model=model,
@@ -1678,21 +1587,13 @@ class ModelResponseIterator:
             if _candidates and len(_candidates) > 0:
                 gemini_chunk = _candidates[0]
 
-            if (
-                gemini_chunk
-                and "content" in gemini_chunk
-                and "parts" in gemini_chunk["content"]
-            ):
+            if gemini_chunk and "content" in gemini_chunk and "parts" in gemini_chunk["content"]:
                 if "text" in gemini_chunk["content"]["parts"][0]:
                     text = gemini_chunk["content"]["parts"][0]["text"]
                 elif "functionCall" in gemini_chunk["content"]["parts"][0]:
                     function_call = ChatCompletionToolCallFunctionChunk(
-                        name=gemini_chunk["content"]["parts"][0]["functionCall"][
-                            "name"
-                        ],
-                        arguments=json.dumps(
-                            gemini_chunk["content"]["parts"][0]["functionCall"]["args"]
-                        ),
+                        name=gemini_chunk["content"]["parts"][0]["functionCall"]["name"],
+                        arguments=json.dumps(gemini_chunk["content"]["parts"][0]["functionCall"]["args"]),
                     )
                     tool_use = ChatCompletionToolCallChunk(
                         id=str(uuid.uuid4()),
@@ -1711,19 +1612,11 @@ class ModelResponseIterator:
 
             if "usageMetadata" in processed_chunk:
                 usage = ChatCompletionUsageBlock(
-                    prompt_tokens=processed_chunk["usageMetadata"].get(
-                        "promptTokenCount", 0
-                    ),
-                    completion_tokens=processed_chunk["usageMetadata"].get(
-                        "candidatesTokenCount", 0
-                    ),
-                    total_tokens=processed_chunk["usageMetadata"].get(
-                        "totalTokenCount", 0
-                    ),
+                    prompt_tokens=processed_chunk["usageMetadata"].get("promptTokenCount", 0),
+                    completion_tokens=processed_chunk["usageMetadata"].get("candidatesTokenCount", 0),
+                    total_tokens=processed_chunk["usageMetadata"].get("totalTokenCount", 0),
                     completion_tokens_details={
-                        "reasoning_tokens": processed_chunk["usageMetadata"].get(
-                            "thoughtsTokenCount", 0
-                        )
+                        "reasoning_tokens": processed_chunk["usageMetadata"].get("thoughtsTokenCount", 0)
                     },
                 )
 
