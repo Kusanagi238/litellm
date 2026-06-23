@@ -120,8 +120,11 @@ class InitializeGuardrails:
         litellm_params_data = guardrail["litellm_params"]
         verbose_proxy_logger.debug("litellm_params= %s", litellm_params_data)
 
+        # Only pass through keys that are present in the input data and are
+        # known LitellmParams fields. This avoids inserting explicit None
+        # for missing keys which would overwrite dataclass defaults.
         _litellm_params_kwargs = {
-            k: litellm_params_data.get(k) for k in LitellmParams.__annotations__.keys()
+            k: v for k, v in litellm_params_data.items() if k in LitellmParams.__annotations__
         }
 
         litellm_params = LitellmParams(**_litellm_params_kwargs)  # type: ignore
@@ -135,13 +138,23 @@ class InitializeGuardrails:
             )
             litellm_params.category_thresholds = lakera_category_thresholds
 
-        if litellm_params.api_key and litellm_params.api_key.startswith("os.environ/"):
+        # Resolve secrets for common API fields
+        if getattr(litellm_params, "api_key", None) and isinstance(litellm_params.api_key, str) and litellm_params.api_key.startswith("os.environ/"):
             litellm_params.api_key = str(get_secret(litellm_params.api_key))
 
-        if litellm_params.api_base and litellm_params.api_base.startswith(
-            "os.environ/"
-        ):
+        if getattr(litellm_params, "api_base", None) and isinstance(litellm_params.api_base, str) and litellm_params.api_base.startswith("os.environ/"):
             litellm_params.api_base = str(get_secret(litellm_params.api_base))
+
+        # Resolve presidio-specific secret-backed values if provided
+        for _attr in (
+            "presidio_analyzer_api_base",
+            "presidio_anonymizer_api_base",
+            "presidio_analyzer_api_key",
+            "presidio_anonymizer_api_key",
+        ):
+            _val = getattr(litellm_params, _attr, None)
+            if isinstance(_val, str) and _val.startswith("os.environ/"):
+                setattr(litellm_params, _attr, str(get_secret(_val)))
 
         guardrail_type = litellm_params.guardrail
         if guardrail_type is None:
