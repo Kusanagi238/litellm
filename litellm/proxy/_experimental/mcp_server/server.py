@@ -15,6 +15,8 @@ from litellm._logging import verbose_logger
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.proxy._experimental.mcp_server.auth.user_api_key_auth_mcp import (
     MCPRequestHandler,
+    MCPAuthenticatedUser,
+    auth_context_var,
 )
 from litellm.proxy._experimental.mcp_server.utils import (
     LITELLM_MCP_SERVER_DESCRIPTION,
@@ -450,9 +452,12 @@ if MCP_AVAILABLE:
             global_mcp_server_manager._get_mcp_server_from_tool_name(name)
         )
         if mcp_server:
-            standard_logging_mcp_tool_call["mcp_server_cost_info"] = (
-                mcp_server.mcp_info or {}
-            ).get("mcp_server_cost_info")
+            # StandardLoggingMCPToolCall is an object (not subscriptable). Set attribute instead.
+            setattr(
+                standard_logging_mcp_tool_call,
+                "mcp_server_cost_info",
+                (mcp_server.mcp_info or {}).get("mcp_server_cost_info"),
+            )
             response =  await _handle_managed_mcp_tool(
                 name=name,  # Pass the full name (potentially prefixed)
                 arguments=arguments,
@@ -559,14 +564,18 @@ if MCP_AVAILABLE:
                 mcp_servers_from_path = [s.strip() for s in mcp_servers_str.split(",") if s.strip()]
 
         if mcp_servers_from_path is not None:
-            user_api_key_auth, mcp_auth_header, _, mcp_server_auth_headers, mcp_protocol_version = (
+            # process_mcp_request returns (user_api_key_auth, mcp_auth_header, mcp_servers, mcp_server_auth_headers)
+            user_api_key_auth, mcp_auth_header, _, mcp_server_auth_headers = (
                 await MCPRequestHandler.process_mcp_request(scope)
             )
             mcp_servers = mcp_servers_from_path
+            mcp_protocol_version = None
         else:
-            user_api_key_auth, mcp_auth_header, mcp_servers, mcp_server_auth_headers, mcp_protocol_version = (
+            # process_mcp_request returns (user_api_key_auth, mcp_auth_header, mcp_servers, mcp_server_auth_headers)
+            user_api_key_auth, mcp_auth_header, mcp_servers, mcp_server_auth_headers = (
                 await MCPRequestHandler.process_mcp_request(scope)
             )
+            mcp_protocol_version = None
         return user_api_key_auth, mcp_auth_header, mcp_servers, mcp_server_auth_headers, mcp_protocol_version
 
     async def handle_streamable_http_mcp(
