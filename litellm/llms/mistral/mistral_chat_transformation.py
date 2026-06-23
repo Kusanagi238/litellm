@@ -257,10 +257,17 @@ Then provide a clear, concise answer based on your reasoning."""
                         # String content - prepend reasoning prompt
                         new_content = f"{reasoning_prompt}\n\n{existing_content}"
                     elif isinstance(existing_content, list):
-                        # List content - prepend reasoning prompt as text block
-                        new_content = [
-                            {"type": "text", "text": reasoning_prompt + "\n\n"}
-                        ] + existing_content
+                        # List content - convert list elements to a joined string and prepend reasoning prompt
+                        parts: List[str] = []
+                        for item in existing_content:
+                            if isinstance(item, dict):
+                                # Prefer common text keys
+                                text_val = item.get("text") or item.get("content") or ""
+                                parts.append(str(text_val))
+                            else:
+                                parts.append(str(item))
+                        joined = "\n\n".join([p for p in parts if p])
+                        new_content = f"{reasoning_prompt}\n\n{joined}"
                     else:
                         # Fallback for any other type - convert to string
                         new_content = f"{reasoning_prompt}\n\n{str(existing_content)}"
