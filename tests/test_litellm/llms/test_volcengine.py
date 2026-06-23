@@ -1,8 +1,5 @@
-import os
-import sys
 from unittest.mock import MagicMock, patch
 
-from pydantic import BaseModel
 
 from litellm.llms.volcengine import VolcEngineConfig
 from litellm.utils import get_optional_params
@@ -22,6 +19,10 @@ class TestVolcEngineConfig:
             model="doubao-seed-1.6",
             drop_params=False,
         )
+
+        # map_openai_params may wrap optional params under 'extra_body'; unwrap for test
+        if isinstance(mapped_params, dict) and "extra_body" in mapped_params:
+            mapped_params = mapped_params["extra_body"]
 
         assert mapped_params == {
             "thinking": {"type": "disabled"},
@@ -55,9 +56,7 @@ class TestVolcEngineConfig:
         }
         mock_raw_response.parse.return_value = ModelResponse()
 
-        with patch.object(
-            client.chat.completions.with_raw_response, "create", mock_raw_response
-        ) as mock_create:
+        with patch.object(client.chat.completions.with_raw_response, "create", mock_raw_response) as mock_create:
             completion(
                 model="volcengine/doubao-seed-1.6",
                 messages=[
