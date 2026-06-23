@@ -4,7 +4,13 @@ import re
 import uuid
 import xml.etree.ElementTree as ET
 from enum import Enum
-from typing import Any, List, Literal, Optional, Tuple, Union, cast, overload
+from typing import Any, List, Optional, Tuple, Union, cast, overload
+
+# Literal may be available in typing (newer Pythons) or typing_extensions (older Pythons)
+try:
+    from typing import Literal  # type: ignore
+except Exception:
+    from typing_extensions import Literal  # type: ignore
 
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
@@ -3027,7 +3033,8 @@ class BedrockConverseMessagesProcessor:
             )
         )
         if _cache_point_block is not None:
-            content_list.append(_cache_point_block)
+            # Cast to the expected BedrockContentBlock type to satisfy type checkers
+            content_list.append(cast(BedrockContentBlock, _cache_point_block))
 
     @staticmethod
     def _initial_message_setup(
