@@ -737,9 +737,19 @@ async def _handle_update_object_permission(
     from litellm.proxy.proxy_server import prisma_client
 
     # Use the common helper to handle the object permission update
+    # Only provide the existing_object_permission_id to the helper when the
+    # incoming payload explicitly references object_permission_id. If the
+    # payload does not reference it, pass None so the helper treats this as
+    # no existing permission (avoids accidentally using an unrelated/incorrect id).
+    existing_object_permission_id = (
+        existing_key_row.object_permission_id
+        if "object_permission_id" in data_json and getattr(existing_key_row, "object_permission_id", None) is not None
+        else None
+    )
+
     object_permission_id = await handle_update_object_permission_common(
         data_json=data_json,
-        existing_object_permission_id=existing_key_row.object_permission_id,
+        existing_object_permission_id=existing_object_permission_id,
         prisma_client=prisma_client,
     )
 
