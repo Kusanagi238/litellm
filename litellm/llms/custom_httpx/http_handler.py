@@ -71,24 +71,38 @@ class MaskedHTTPStatusError(httpx.HTTPStatusError):
     def __init__(
         self, original_error, message: Optional[str] = None, text: Optional[str] = None
     ):
-        # Create a new error with the masked URL
-        masked_url = mask_sensitive_info(str(original_error.request.url))
-        # Create a new error that looks like the original, but with a masked URL
+        # Safely construct a masked representation of the original error.
+        # Avoid relying on attributes that may not exist (like .message) and handle missing request/response.
+        message_to_use = message if message is not None else str(original_error)
 
-        super().__init__(
-            message=original_error.message,
-            request=httpx.Request(
-                method=original_error.request.method,
-                url=masked_url,
-                headers=original_error.request.headers,
-                content=original_error.request.content,
-            ),
-            response=httpx.Response(
-                status_code=original_error.response.status_code,
-                content=original_error.response.content,
-                headers=original_error.response.headers,
-            ),
-        )
+        req_obj = None
+        resp_obj = None
+
+        try:
+            if getattr(original_error, "request", None) is not None:
+                req = original_error.request
+                masked_url = mask_sensitive_info(str(getattr(req, "url", "")))
+                req_obj = httpx.Request(
+                    method=getattr(req, "method", None),
+                    url=masked_url,
+                    headers=getattr(req, "headers", None),
+                    content=getattr(req, "content", None),
+                )
+        except Exception:
+            req_obj = None
+
+        try:
+            if getattr(original_error, "response", None) is not None:
+                resp = original_error.response
+                resp_obj = httpx.Response(
+                    status_code=getattr(resp, "status_code", 0) or 0,
+                    content=getattr(resp, "content", None),
+                    headers=getattr(resp, "headers", None),
+                )
+        except Exception:
+            resp_obj = None
+
+        super().__init__(message=message_to_use, request=req_obj, response=resp_obj)
         self.message = message
         self.text = text
 
@@ -104,13 +118,12 @@ class AsyncHTTPHandler:
     ):
         self.timeout = timeout
         self.event_hooks = event_hooks
-        self.client = self.create_client(
-            timeout=timeout,
-            concurrent_limit=concurrent_limit,
-            event_hooks=event_hooks,
-            ssl_verify=ssl_verify,
-        )
+        # Store configuration for lazy client creation to avoid import-time side effects
+        self._concurrent_limit = concurrent_limit
         self.client_alias = client_alias
+        self._ssl_verify = ssl_verify
+        # Do not construct an AsyncClient at init time. Create it lazily when first needed.
+        self.client: Optional[httpx.AsyncClient] = None
 
     def create_client(
         self,
@@ -176,9 +189,10 @@ class AsyncHTTPHandler:
     async def __aenter__(self):
         return self.client
 
-    async def __aexit__(self):
+    async def __aexit__(self, exc_type, exc, tb):
         # close the client when exiting
-        await self.client.aclose()
+        if self.client is not None:
+            await self.client.aclose()
 
     async def get(
         self,

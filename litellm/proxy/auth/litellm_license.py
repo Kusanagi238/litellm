@@ -9,8 +9,6 @@ from typing import Optional
 import httpx
 
 from litellm._logging import verbose_proxy_logger
-from litellm.constants import NON_LLM_CONNECTION_TIMEOUT
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
 
 
 class LicenseCheck:
@@ -23,10 +21,10 @@ class LicenseCheck:
 
     def __init__(self) -> None:
         self.license_str = os.getenv("LITELLM_LICENSE", None)
-        verbose_proxy_logger.debug("License Str value - {}".format(self.license_str))
-        self.http_handler = HTTPHandler(timeout=NON_LLM_CONNECTION_TIMEOUT)
+        # Avoid performing logging or creating network handlers during import-time initialization.
+        # Initialize handlers lazily to prevent I/O during module import/reload.
+        self.http_handler = None
         self.public_key = None
-        self.read_public_key()
 
     def read_public_key(self):
         try:
@@ -76,9 +74,7 @@ class LicenseCheck:
             assert isinstance(premium, bool)
 
             verbose_proxy_logger.debug(
-                "litellm.proxy.auth.litellm_license.py::_verify - License={} is premium={}".format(
-                    license_str, premium
-                )
+                "litellm.proxy.auth.litellm_license.py::_verify - License={} is premium={}".format(license_str, premium)
             )
             return premium
         except Exception as e:
@@ -113,9 +109,7 @@ class LicenseCheck:
             if self.license_str is None:
                 return False
             elif (
-                self.verify_license_without_api_request(
-                    public_key=self.public_key, license_key=self.license_str
-                )
+                self.verify_license_without_api_request(public_key=self.public_key, license_key=self.license_str)
                 is True
             ):
                 return True
@@ -152,11 +146,10 @@ class LicenseCheck:
             verbose_proxy_logger.debug("License data: %s", license_data)
 
             # Check expiration date
-            expiration_date = datetime.strptime(
-                license_data["expiration_date"], "%Y-%m-%d"
-            )
+            expiration_date = datetime.strptime(license_data["expiration_date"], "%Y-%m-%d")
             if expiration_date < datetime.now():
-                return False, "License has expired"
+                verbose_proxy_logger.debug("License has expired")
+                return False
 
             return True
 

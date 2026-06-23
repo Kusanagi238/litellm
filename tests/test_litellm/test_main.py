@@ -5,16 +5,20 @@ import sys
 import httpx
 import pytest
 import respx
-from fastapi.testclient import TestClient
 
-sys.path.insert(
-    0, os.path.abspath("../..")
-)  # Adds the parent directory to the system path
+sys.path.insert(0, os.path.abspath("../.."))  # Adds the parent directory to the system path
 
 import urllib.parse
 from unittest.mock import MagicMock, patch
 
-import litellm
+
+# Defer importing litellm at module import time to avoid running module-level
+# side-effects during test collection/reloads (which can cause logging/IO errors).
+# Tests that need litellm should import it at runtime or call import_litellm().
+def import_litellm():
+    import importlib
+
+    return importlib.import_module("litellm")
 
 
 @pytest.fixture(autouse=True)
@@ -85,9 +89,7 @@ def test_completion_missing_role(openai_api_response):
 
     print(f"openai_api_response: {openai_api_response}")
 
-    with patch.object(
-        client.chat.completions.with_raw_response, "create", mock_raw_response
-    ) as mock_create:
+    with patch.object(client.chat.completions.with_raw_response, "create", mock_raw_response) as mock_create:
         litellm.completion(
             model="gpt-4o-mini",
             messages=[
@@ -169,15 +171,33 @@ async def test_url_with_format_param(model, sync_mode, monkeypatch):
             }
         ],
     }
+
+    # Stub out external HTTP image fetches to avoid network calls/403s during CI.
+    class _DummyResponse:
+        def __init__(self):
+            self.status_code = 200
+            self.content = b"fakeimage"
+            self.headers = {"content-type": "image/png"}
+
+    def _sync_get(*args, **kwargs):
+        return _DummyResponse()
+
+    async def _async_get(*args, **kwargs):
+        return _DummyResponse()
+
+    # Patch both convenience httpx.get and AsyncClient.get to be safe for sync/async paths.
+    monkeypatch.setattr("httpx.get", _sync_get, raising=False)
+    monkeypatch.setattr("httpx.AsyncClient.get", _async_get, raising=False)
+
     with patch.object(client, "post", new=MagicMock()) as mock_client:
-        try:
-            if sync_mode:
-                response = completion(**args, client=client)
-            else:
-                response = await acompletion(**args, client=client)
-            print(response)
-        except Exception as e:
-            pass
+        # Execute the completion call directly; let exceptions propagate so test fails
+        # loudly if something unexpected happens (do not silently swallow exceptions).
+        if sync_mode:
+            response = completion(**args, client=client)
+        else:
+            response = await acompletion(**args, client=client)
+
+        print(response)
 
         mock_client.assert_called()
 
@@ -199,7 +219,7 @@ async def test_url_with_format_param(model, sync_mode, monkeypatch):
 @pytest.mark.parametrize("model", ["gpt-4o-mini"])
 @pytest.mark.parametrize("sync_mode", [True, False])
 @pytest.mark.asyncio
-async def test_url_with_format_param_openai(model, sync_mode):
+async def test_url_with_format_param_openai(model, sync_mode, monkeypatch):
     from openai import AsyncOpenAI, OpenAI
 
     from litellm import acompletion, completion
@@ -227,17 +247,31 @@ async def test_url_with_format_param_openai(model, sync_mode):
             }
         ],
     }
-    with patch.object(
-        client.chat.completions.with_raw_response, "create"
-    ) as mock_client:
-        try:
-            if sync_mode:
-                response = completion(**args, client=client)
-            else:
-                response = await acompletion(**args, client=client)
-            print(response)
-        except Exception as e:
-            print(e)
+
+    # Stub out external HTTP image fetches to avoid network calls/403s during CI.
+    class _DummyResponse:
+        def __init__(self):
+            self.status_code = 200
+            self.content = b"fakeimage"
+            self.headers = {"content-type": "image/png"}
+
+    def _sync_get(*args, **kwargs):
+        return _DummyResponse()
+
+    async def _async_get(*args, **kwargs):
+        return _DummyResponse()
+
+    monkeypatch.setattr("httpx.get", _sync_get, raising=False)
+    monkeypatch.setattr("httpx.AsyncClient.get", _async_get, raising=False)
+
+    with patch.object(client.chat.completions.with_raw_response, "create") as mock_client:
+        # Execute the completion call directly; do not swallow exceptions so test
+        # fails if the invocation does not reach the mocked create call.
+        if sync_mode:
+            response = completion(**args, client=client)
+        else:
+            response = await acompletion(**args, client=client)
+        print(response)
 
         mock_client.assert_called()
 
@@ -280,9 +314,7 @@ def set_openrouter_api_key():
 
 
 @pytest.mark.asyncio
-async def test_extra_body_with_fallback(
-    respx_mock: respx.MockRouter, set_openrouter_api_key
-):
+async def test_extra_body_with_fallback(respx_mock: respx.MockRouter, set_openrouter_api_key):
     """
     test regression for https://github.com/BerriAI/litellm/issues/8425.
 
@@ -352,9 +384,7 @@ async def test_extra_body_with_fallback(
 
 @pytest.mark.parametrize("env_base", ["OPENAI_BASE_URL", "OPENAI_API_BASE"])
 @pytest.mark.asyncio
-async def test_openai_env_base(
-    respx_mock: respx.MockRouter, env_base, openai_api_response, monkeypatch
-):
+async def test_openai_env_base(respx_mock: respx.MockRouter, env_base, openai_api_response, monkeypatch):
     "This tests OpenAI env variables are honored, including legacy OPENAI_API_BASE"
     litellm.disable_aiohttp_transport = True
 

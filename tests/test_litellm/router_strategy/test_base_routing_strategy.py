@@ -1,18 +1,14 @@
-import json
 import os
 import sys
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional
 
 import pytest
 
-sys.path.insert(
-    0, os.path.abspath("../../..")
-)  # Adds the parent directory to the system path
+sys.path.insert(0, os.path.abspath("../../.."))  # Adds the parent directory to the system path
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 from litellm.caching.caching import DualCache
 from litellm.caching.redis_cache import RedisPipelineIncrementOperation
@@ -65,9 +61,7 @@ async def test_increment_value_in_current_window(base_strategy, mock_dual_cache)
     await base_strategy._increment_value_in_current_window(key, value, ttl)
 
     # Verify in-memory cache was incremented
-    mock_dual_cache.in_memory_cache.async_increment.assert_called_once_with(
-        key=key, value=value, ttl=ttl
-    )
+    mock_dual_cache.in_memory_cache.async_increment.assert_called_once_with(key=key, value=value, ttl=ttl)
 
     # Verify operation was queued for Redis
     assert len(base_strategy.redis_increment_operation_queue) == 1
@@ -102,9 +96,7 @@ async def test_sync_in_memory_spend_with_redis(base_strategy, mock_dual_cache):
     # Mock the in-memory cache batch get responses for before snapshot
     in_memory_before_future: asyncio.Future[List[str]] = asyncio.Future()
     in_memory_before_future.set_result(["5.0"])  # Initial values
-    mock_dual_cache.in_memory_cache.async_batch_get_cache.return_value = (
-        in_memory_before_future
-    )
+    mock_dual_cache.in_memory_cache.async_batch_get_cache.return_value = in_memory_before_future
 
     # Mock Redis batch get response
     redis_future: asyncio.Future[Dict[str, str]] = asyncio.Future()
@@ -114,16 +106,19 @@ async def test_sync_in_memory_spend_with_redis(base_strategy, mock_dual_cache):
     # Mock in-memory get for after snapshot
     in_memory_after_future: asyncio.Future[Optional[str]] = asyncio.Future()
     in_memory_after_future.set_result("8.0")  # Value after potential updates
-    mock_dual_cache.in_memory_cache.async_get_cache.return_value = (
-        in_memory_after_future
-    )
+    mock_dual_cache.in_memory_cache.async_get_cache.return_value = in_memory_after_future
 
     await base_strategy._sync_in_memory_spend_with_redis()
 
     # Verify Redis batch get was called with correct keys
-    key_list = mock_dual_cache.redis_cache.async_batch_get_cache.call_args.kwargs[
-        "key_list"
-    ]
+    call = mock_dual_cache.redis_cache.async_batch_get_cache.call_args
+    assert call is not None, "redis async_batch_get_cache was not called"
+    # Safely extract key_list from kwargs or args
+    if getattr(call, "kwargs", None):
+        key_list = call.kwargs.get("key_list")
+    else:
+        key_list = call.args[0] if getattr(call, "args", None) and len(call.args) > 0 else None
+    assert key_list is not None, "key_list not provided in redis async_batch_get_cache call"
     assert sorted(key_list) == sorted(["key1"])
 
     # Verify in-memory cache was updated with merged values
@@ -132,10 +127,7 @@ async def test_sync_in_memory_spend_with_redis(base_strategy, mock_dual_cache):
 
     # Verify the final merged values
     set_cache_calls = mock_dual_cache.in_memory_cache.async_set_cache.call_args_list
-    assert any(
-        call.kwargs["key"] == "key1" and float(call.kwargs["value"]) == 18.0
-        for call in set_cache_calls
-    )
+    assert any(call.kwargs["key"] == "key1" and float(call.kwargs["value"]) == 18.0 for call in set_cache_calls)
 
     # Verify cache keys still exist
     assert len(base_strategy.in_memory_keys_to_update) == 1

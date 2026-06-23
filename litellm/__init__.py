@@ -219,7 +219,14 @@ ssl_certificate: Optional[str] = None
 disable_streaming_logging: bool = False
 disable_token_counter: bool = False
 disable_add_transform_inline_image_block: bool = False
-in_memory_llm_clients_cache: LLMClientCache = LLMClientCache()
+in_memory_llm_clients_cache: LLMClientCache = None
+
+def get_in_memory_llm_clients_cache():
+    """Lazily instantiate and return the in-memory LLM client cache."""
+    global in_memory_llm_clients_cache
+    if in_memory_llm_clients_cache is None:
+        in_memory_llm_clients_cache = LLMClientCache()
+    return in_memory_llm_clients_cache
 safe_memory_mode: bool = False
 enable_azure_ad_token_refresh: Optional[bool] = False
 ### DEFAULT AZURE API VERSION ###
@@ -309,10 +316,24 @@ priority_reservation: Optional[Dict[str, float]] = None
 use_aiohttp_transport: bool = True  # Older variable, aiohttp is now the default. use disable_aiohttp_transport instead.
 disable_aiohttp_transport: bool = False  # Set this to true to use httpx instead
 force_ipv4: bool = False  # when True, litellm will force ipv4 for all LLM requests. Some users have seen httpx ConnectionError when using ipv6.
-module_level_aclient = AsyncHTTPHandler(
-    timeout=request_timeout, client_alias="module level aclient"
-)
-module_level_client = HTTPHandler(timeout=request_timeout)
+module_level_aclient = None
+module_level_client = None
+
+def get_module_level_aclient():
+    """Lazily create and return the module-level async HTTP handler."""
+    global module_level_aclient
+    if module_level_aclient is None:
+        module_level_aclient = AsyncHTTPHandler(
+            timeout=request_timeout, client_alias="module level aclient"
+        )
+    return module_level_aclient
+
+def get_module_level_client():
+    """Lazily create and return the module-level HTTP handler."""
+    global module_level_client
+    if module_level_client is None:
+        module_level_client = HTTPHandler(timeout=request_timeout)
+    return module_level_client
 
 #### RETRIES ####
 num_retries: Optional[int] = None  # per model endpoint
@@ -337,7 +358,21 @@ output_parse_pii: bool = False
 #############################################
 from litellm.litellm_core_utils.get_model_cost_map import get_model_cost_map
 
-model_cost = get_model_cost_map(url=model_cost_map_url)
+_model_cost = None
+
+def get_model_cost():
+    """Lazily load and return the model cost map. Returns an empty dict on failure."""
+    global _model_cost
+    if _model_cost is None:
+        try:
+            _model_cost = get_model_cost_map(url=model_cost_map_url)
+        except Exception:
+            # Avoid raising (or performing network IO) during import; callers can handle empty map
+            _model_cost = {}
+    return _model_cost
+
+# Backwards-compatible name: callers should call get_model_cost() to obtain the map.
+model_cost = None
 custom_prompt_dict: Dict[str, dict] = {}
 check_provider_endpoint = False
 
@@ -491,7 +526,16 @@ def is_openai_finetune_model(key: str) -> bool:
     return key.startswith("ft:") and not key.count(":") > 1
 
 
-def add_known_models():
+def _known_models_initialized = False
+
+def ensure_known_models_initialized():
+    """Ensure add_known_models() runs at most once and only when explicitly requested."""
+    global _known_models_initialized
+    if not _known_models_initialized:
+        try:
+            add_known_models()
+        finally:
+            _known_models_initialized = True:
     for key, value in model_cost.items():
         if value.get("litellm_provider") == "openai" and not is_openai_finetune_model(
             key
@@ -931,7 +975,14 @@ from .llms.vertex_ai.vertex_embeddings.transformation import (
     VertexAITextEmbeddingConfig,
 )
 
-vertexAITextEmbeddingConfig = VertexAITextEmbeddingConfig()
+vertexAITextEmbeddingConfig = None
+
+def get_vertexAITextEmbeddingConfig():
+    """Lazily create and return the VertexAITextEmbeddingConfig instance."""
+    global vertexAITextEmbeddingConfig
+    if vertexAITextEmbeddingConfig is None:
+        vertexAITextEmbeddingConfig = VertexAITextEmbeddingConfig()
+    return vertexAITextEmbeddingConfig
 
 from .llms.vertex_ai.vertex_ai_partner_models.anthropic.transformation import (
     VertexAIAnthropicConfig,
@@ -1020,7 +1071,14 @@ from .llms.openai.chat.o_series_transformation import (
 
 from .llms.snowflake.chat.transformation import SnowflakeConfig
 
-openaiOSeriesConfig = OpenAIOSeriesConfig()
+openaiOSeriesConfig = None
+
+def get_openaiOSeriesConfig():
+    global openaiOSeriesConfig
+    if openaiOSeriesConfig is None:
+        openaiOSeriesConfig = OpenAIOSeriesConfig()
+    return openaiOSeriesConfig
+
 from .llms.openai.chat.gpt_transformation import (
     OpenAIGPTConfig,
 )
@@ -1031,18 +1089,43 @@ from .llms.openai.transcriptions.gpt_transformation import (
     OpenAIGPTAudioTranscriptionConfig,
 )
 
-openAIGPTConfig = OpenAIGPTConfig()
+openAIGPTConfig = None
+
+def get_openAIGPTConfig():
+    global openAIGPTConfig
+    if openAIGPTConfig is None:
+        openAIGPTConfig = OpenAIGPTConfig()
+    return openAIGPTConfig
+
 from .llms.openai.chat.gpt_audio_transformation import (
     OpenAIGPTAudioConfig,
 )
 
-openAIGPTAudioConfig = OpenAIGPTAudioConfig()
+openAIGPTAudioConfig = None
+
+def get_openAIGPTAudioConfig():
+    global openAIGPTAudioConfig
+    if openAIGPTAudioConfig is None:
+        openAIGPTAudioConfig = OpenAIGPTAudioConfig()
+    return openAIGPTAudioConfig
 
 from .llms.nvidia_nim.chat.transformation import NvidiaNimConfig
 from .llms.nvidia_nim.embed import NvidiaNimEmbeddingConfig
 
-nvidiaNimConfig = NvidiaNimConfig()
-nvidiaNimEmbeddingConfig = NvidiaNimEmbeddingConfig()
+nvidiaNimConfig = None
+nvidiaNimEmbeddingConfig = None
+
+def get_nvidiaNimConfig():
+    global nvidiaNimConfig
+    if nvidiaNimConfig is None:
+        nvidiaNimConfig = NvidiaNimConfig()
+    return nvidiaNimConfig
+
+def get_nvidiaNimEmbeddingConfig():
+    global nvidiaNimEmbeddingConfig
+    if nvidiaNimEmbeddingConfig is None:
+        nvidiaNimEmbeddingConfig = NvidiaNimEmbeddingConfig()
+    return nvidiaNimEmbeddingConfig
 
 from .llms.featherless_ai.chat.transformation import FeatherlessAIConfig
 from .llms.cerebras.chat import CerebrasConfig
