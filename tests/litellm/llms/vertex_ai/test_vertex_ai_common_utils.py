@@ -1,23 +1,19 @@
 import os
 import sys
-from typing import Any, Dict
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 import pytest
 
 from litellm.constants import DEFAULT_MAX_RECURSE_DEPTH
 
-sys.path.insert(
-    0, os.path.abspath("../../..")
-)  # Adds the parent directory to the system path
+sys.path.insert(0, os.path.abspath("../../.."))  # Adds the parent directory to the system path
 
-import litellm
 from litellm.llms.vertex_ai.common_utils import (
     convert_anyof_null_to_nullable,
     get_vertex_location_from_url,
     get_vertex_project_id_from_url,
     set_schema_property_ordering,
-    _get_vertex_url
+    _get_vertex_url,
 )
 
 
@@ -138,15 +134,11 @@ async def test_get_supports_system_message():
     from litellm.llms.vertex_ai.common_utils import get_supports_system_message
 
     # fine-tuned vertex gemini models will specifiy they are in the /gemini spec format
-    result = get_supports_system_message(
-        model="gemini/1234567890", custom_llm_provider="vertex_ai"
-    )
+    result = get_supports_system_message(model="gemini/1234567890", custom_llm_provider="vertex_ai")
     assert result == True
 
     # non-fine-tuned vertex gemini models will not specifiy they are in the /gemini spec format
-    result = get_supports_system_message(
-        model="random-model-name", custom_llm_provider="vertex_ai"
-    )
+    result = get_supports_system_message(model="random-model-name", custom_llm_provider="vertex_ai")
     assert result == False
 
 
@@ -186,13 +178,9 @@ def test_build_vertex_schema():
                 "properties": {
                     "tags": {"items": {"type": "string"}, "type": "array"},
                     "metadata": {"type": "object"},
-                    "callbacks": {
-                        "anyOf": [{"items": {}, "type": "array"}, {}, {"type": "null"}]
-                    },
+                    "callbacks": {"anyOf": [{"items": {}, "type": "array"}, {}, {"type": "null"}]},
                     "run_name": {"type": "string"},
-                    "max_concurrency": {
-                        "anyOf": [{"type": "integer"}, {"type": "null"}]
-                    },
+                    "max_concurrency": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
                     "recursion_limit": {"type": "integer"},
                     "configurable": {"type": "object"},
                     "run_id": {
@@ -232,16 +220,10 @@ def test_build_vertex_schema():
                         ]
                     },
                     "run_name": {"type": "string"},
-                    "max_concurrency": {
-                        "anyOf": [{"type": "integer", "nullable": True}]
-                    },
+                    "max_concurrency": {"anyOf": [{"type": "integer", "nullable": True}]},
                     "recursion_limit": {"type": "integer"},
                     "configurable": {"type": "object"},
-                    "run_id": {
-                        "anyOf": [
-                            {"format": "uuid", "type": "string", "nullable": True}
-                        ]
-                    },
+                    "run_id": {"anyOf": [{"format": "uuid", "type": "string", "nullable": True}]},
                 },
                 "type": "object",
             },
@@ -294,7 +276,8 @@ def test_process_items_basic():
     process_items(schema)
     assert schema["properties"]["nested"]["items"] == {"type": "object"}
 
-def test_get_vertex_url_global_region(stream):
+
+def test_get_vertex_url_global_region():
     """
     Test _get_vertex_url when vertex_location is 'global' for chat mode.
     """
@@ -306,25 +289,25 @@ def test_get_vertex_url_global_region(stream):
 
     # Mock litellm.VertexGeminiConfig.get_model_for_vertex_ai_url to return model as is
     # as we are not testing that part here, just the URL construction
-    with patch("litellm.VertexGeminiConfig.get_model_for_vertex_ai_url", side_effect=lambda model: model):
-        url, endpoint = _get_vertex_url(
-            mode=mode,
-            model=model,
-            stream=stream,
-            vertex_project=vertex_project,
-            vertex_location=vertex_location,
-            vertex_api_version=vertex_api_version,
-        )
+    for stream in (True, False):
+        with patch("litellm.VertexGeminiConfig.get_model_for_vertex_ai_url", side_effect=lambda model: model):
+            url, endpoint = _get_vertex_url(
+                mode=mode,
+                model=model,
+                stream=stream,
+                vertex_project=vertex_project,
+                vertex_location=vertex_location,
+                vertex_api_version=vertex_api_version,
+            )
 
-    expected_url_base = f"https://aiplatform.googleapis.com/{vertex_api_version}/projects/{vertex_project}/locations/global/publishers/google/models/{model}"
-    
-    if stream:
-        expected_endpoint = "streamGenerateContent"
-        expected_url = f"{expected_url_base}:{expected_endpoint}?alt=sse"
-    else:
-        expected_endpoint = "generateContent"
-        expected_url = f"{expected_url_base}:{expected_endpoint}"
+        expected_url_base = f"https://aiplatform.googleapis.com/{vertex_api_version}/projects/{vertex_project}/locations/global/publishers/google/models/{model}"
 
+        if stream:
+            expected_endpoint = "streamGenerateContent"
+            expected_url = f"{expected_url_base}:{expected_endpoint}?alt=sse"
+        else:
+            expected_endpoint = "generateContent"
+            expected_url = f"{expected_url_base}:{expected_endpoint}"
 
-    assert endpoint == expected_endpoint
-    assert url == expected_url
+        assert endpoint == expected_endpoint
+        assert url == expected_url
