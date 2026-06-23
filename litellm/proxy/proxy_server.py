@@ -2590,7 +2590,19 @@ class ProxyConfig:
 
             # Get mcp_aliases from litellm_settings if available
             litellm_settings = config.get("litellm_settings", {})
-            mcp_aliases = litellm_settings.get("mcp_aliases", None)
+            mcp_aliases_raw = litellm_settings.get("mcp_aliases", None)
+
+            # Ensure we pass a concrete list[str] to the manager (avoid Optional type)
+            if mcp_aliases_raw is None:
+                mcp_aliases = []
+            elif isinstance(mcp_aliases_raw, list):
+                mcp_aliases = mcp_aliases_raw
+            else:
+                # Coerce other iterable types (e.g., tuple) to list, fallback to single-item list
+                try:
+                    mcp_aliases = list(mcp_aliases_raw)
+                except Exception:
+                    mcp_aliases = [mcp_aliases_raw]
 
             await global_mcp_server_manager.load_servers_from_config(
                 mcp_servers_config, mcp_aliases

@@ -243,12 +243,12 @@ class MCPServerManager:
                     "authentication_token", server_config.get("auth_value", None)
                 ),
                 mcp_info=mcp_info,
-                extra_headers=server_config.get("extra_headers", None),
-                allowed_tools=server_config.get("allowed_tools", None),
-                disallowed_tools=server_config.get("disallowed_tools", None),
-                allowed_params=server_config.get("allowed_params", None),
-                access_groups=server_config.get("access_groups", None),
-                static_headers=server_config.get("static_headers", None),
+                extra_headers=server_config.get("extra_headers") or {},
+                allowed_tools=server_config.get("allowed_tools") or [],
+                disallowed_tools=server_config.get("disallowed_tools") or [],
+                allowed_params=server_config.get("allowed_params") or {},
+                access_groups=server_config.get("access_groups") or [],
+                static_headers=server_config.get("static_headers") or {},
             )
             self.config_mcp_servers[server_id] = new_server
 
@@ -471,7 +471,7 @@ class MCPServerManager:
                     auth_type=cast(MCPAuthType, mcp_server.auth_type),
                     authentication_token=auth_value,
                     mcp_info=mcp_info,
-                    extra_headers=getattr(mcp_server, "extra_headers", None),
+                    extra_headers=getattr(mcp_server, "extra_headers", None) or {},
                     static_headers=static_headers_dict,
                     # oauth specific fields
                     client_id=getattr(mcp_server, "client_id", None),
@@ -481,12 +481,12 @@ class MCPServerManager:
                     token_url=getattr(mcp_server, "token_url", None),
                     registration_url=getattr(mcp_server, "registration_url", None),
                     # Stdio-specific fields
-                    command=getattr(mcp_server, "command", None),
+                    command=getattr(mcp_server, "command", None) or "",
                     args=getattr(mcp_server, "args", None) or [],
                     env=env_dict,
-                    access_groups=getattr(mcp_server, "mcp_access_groups", None),
-                    allowed_tools=getattr(mcp_server, "allowed_tools", None),
-                    disallowed_tools=getattr(mcp_server, "disallowed_tools", None),
+                    access_groups=getattr(mcp_server, "mcp_access_groups", None) or [],
+                    allowed_tools=getattr(mcp_server, "allowed_tools", None) or [],
+                    disallowed_tools=getattr(mcp_server, "disallowed_tools", None) or [],
                 )
                 self.registry[mcp_server.server_id] = new_server
                 verbose_logger.debug(f"Added MCP Server: {name_for_prefix}")
@@ -815,7 +815,7 @@ class MCPServerManager:
         resource_metadata_url = params.get("resource_metadata")
 
         scope_value = params.get("scope")
-        scopes = [s for s in (scope_value.split() if scope_value else []) if s]
+        scopes: Optional[List[str]] = [s for s in (scope_value.split() if scope_value else []) if s]
         scopes = scopes or None
 
         return resource_metadata_url, scopes
